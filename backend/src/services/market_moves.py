@@ -465,10 +465,14 @@ def _load_baskets() -> dict[str, list[Basket]]:
     from src.utils.market import infer_market
 
     names = {}
-    for db in get_session():
-        for row in db.query(StockTranslation).filter(StockTranslation.market == "US").all():
-            zh = (row.name_zh_tw or "").strip() if row.translation_status == "approved" else ""
-            names[row.ticker] = zh or (row.name_en or "").strip() or row.ticker
+    try:
+        for db in get_session():
+            for row in db.query(StockTranslation).filter(StockTranslation.market == "US").all():
+                if row.translation_status == "approved" and (row.name_zh_tw or "").strip():
+                    names[row.ticker] = row.name_zh_tw.strip()
+    except Exception:  # noqa: BLE001 — optional labels must not prevent a theme scan
+        names = {}
+        logger.warning("US theme translation lookup failed; using registry names or tickers")
 
     idx = PodcastService._sector_membership_index()
     meta, members = idx.get("meta", {}), idx.get("members", {})
@@ -484,7 +488,7 @@ def _load_baskets() -> dict[str, list[Basket]]:
             if mk == "TW":
                 by_market["TW"].append(Instrument(f"{t}{suffix.get(t, '.TW')}", m.get("name") or t))
             elif mk == "US":
-                by_market["US"].append(Instrument(t, names.get(t) or t))
+                by_market["US"].append(Instrument(t, m.get("name") or names.get(t) or t))
         for mk, insts in by_market.items():
             if len(insts) >= THEME_MIN_MEMBERS:
                 out[mk].append(Basket(eid, name, insts))

@@ -976,7 +976,7 @@ def test_us_baskets_load_without_registry_and_use_approved_names(basket_db, monk
             StockTranslation(ticker="XYZ", market="TW", name_zh_tw="錯誤市場", translation_status="approved"),
             StockTranslation(ticker="EMPTY", market="US", name_en=" ", name_zh_tw=" ",
                              translation_status="approved"),
-            StockTranslation(ticker="HOLLOW", market="US", name_en="English fallback", name_zh_tw=" ",
+            StockTranslation(ticker="HOLLOW", market="US", name_en="Hollow International Holdings Corporation Class A Common Stock", name_zh_tw=" ",
                              translation_status="approved"),
         ])
         db.commit()
@@ -992,7 +992,7 @@ def test_us_baskets_load_without_registry_and_use_approved_names(basket_db, monk
     finally:
         event.remove(basket_db, "before_cursor_execute", record)
     assert out["TW"] == []
-    assert [m.name for m in out["US"][0].members] == ["輝達", "Microsoft", "Meta", "XYZ", "EMPTY", "English fallback"]
+    assert [m.name for m in out["US"][0].members] == ["輝達", "MSFT", "META", "XYZ", "EMPTY", "HOLLOW"]
     assert len(queries) == 1
 
 
@@ -1064,3 +1064,48 @@ async def test_thousand_symbol_scan_keeps_bounded_batches_and_deduplicates(monke
     assert len(out) == 1001
     assert len(batches) == 51 and max(map(len, batches)) == 20
     assert peak <= yahoo_chart.SPARK_CONCURRENCY
+
+
+
+def test_registry_us_names_take_precedence_over_translations(basket_db, monkeypatch):
+    from src.database.models import StockTranslation
+    from src.database.postgres import get_session
+    from src.services.podcast import PodcastService
+
+    for db in get_session():
+        db.add_all([
+            StockTranslation(ticker="NVDA", market="US", name_zh_tw="輝達", translation_status="approved"),
+            StockTranslation(ticker="AMD", market="US", name_zh_tw="超微", translation_status="approved"),
+            StockTranslation(ticker="INTC", market="US", name_zh_tw="待審", translation_status="pending"),
+        ])
+        db.commit()
+    monkeypatch.setattr(mm, "US_THEMES", [])
+    monkeypatch.setattr(PodcastService, "_sector_membership_index", staticmethod(lambda: {
+        "meta": {"theme_chips": {"display_name": "晶片", "exposure_type": "theme"}},
+        "members": {"theme_chips": [
+            {"ticker": "NVDA", "name": "Registry Nvidia"}, {"ticker": "AMD"}, {"ticker": "INTC"}]},
+    }))
+    assert [m.name for m in mm._load_baskets()["US"][0].members] == ["Registry Nvidia", "超微", "INTC"]
+
+
+def test_translation_query_failure_preserves_baskets_and_warns(basket_db, monkeypatch, caplog):
+    from sqlalchemy import event
+    from sqlalchemy.exc import OperationalError
+    from src.services.podcast import PodcastService
+
+    monkeypatch.setattr(PodcastService, "_sector_membership_index", staticmethod(lambda: {}))
+    monkeypatch.setattr(mm, "US_THEMES", [
+        {"exposure_id": "theme_us_test", "name": "測試", "members": ["NVDA", "AMD", "INTC"]}])
+
+    def fail_query(_conn, _cursor, statement, _parameters, _context, _executemany):
+        if "stock_translations" in statement:
+            raise OperationalError(statement, {}, RuntimeError("database unavailable"))
+
+    event.listen(basket_db, "before_cursor_execute", fail_query)
+    try:
+        with caplog.at_level("WARNING", logger=mm.__name__):
+            out = mm._load_baskets()
+    finally:
+        event.remove(basket_db, "before_cursor_execute", fail_query)
+    assert [m.name for m in out["US"][0].members] == ["NVDA", "AMD", "INTC"]
+    assert "US theme translation lookup failed" in caplog.text

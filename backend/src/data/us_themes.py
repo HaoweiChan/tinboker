@@ -1,15 +1,20 @@
 """Curated US-listed theme baskets for the market-move theme lane.
 
-Source holdings: issuer snapshots dated 2026-10-14, retrieved 2026-10-15.
+Source holdings: issuer snapshots dated 2026-10-14; QTUP dated 2026-10-15.
+Narrow baskets re-audited 2026-10-16 (Asia/Taipei), including issuer-backed additions.
 Only NYSE/Nasdaq common equities/ADRs in Nasdaq Trader's symbol directories
-are retained; cash, funds, OTC and foreign-exchange listings are excluded.
+are retained; cash, funds, OTC and foreign-exchange symbols are excluded.
+COPX Canadian holdings use their issuer-confirmed NYSE cross-listings.
 Broad sector baskets retain the first 80 eligible issuer holdings. Narrower
-baskets select directly exposed companies from the cited issuer holdings.
+baskets select directly exposed companies from the cited issuer holdings,
+with explicit issuer sources for Taiwan ADRs and memory controllers.
 Membership is equally weighted by the detector, not by ETF portfolio weights.
 
-Validation on 2026-10-15 (completed before 15:52 UTC): all 1,567 final symbols
-returned usable Yahoo spark quotes. The pre-pruning universe of 1,578 symbols
-completed 79 uncached batches at concurrency 2 in 4.054s, with no failed batches.
+Validation on 2026-10-16 (Asia/Taipei): all 1,509 final symbols
+returned usable Yahoo spark quotes in a 1,510-symbol candidate run (one later
+excluded during story-fit review). 76 uncached batches at concurrency 2
+completed in 4.287s, with no failed batches. This is local timing,
+not a VPS throttling measurement.
 NYSE/Nasdaq directory source: https://www.nasdaqtrader.com/trader.aspx?id=symboldirdefs
 Additional SPDR source files referenced by the narrow baskets:
 https://www.ssga.com/library-content/products/fund-data/etfs/us/holdings-daily-us-en-xtl.xlsx
@@ -36,16 +41,16 @@ US_THEMES: list[dict] = [
         ],
     },
     # ITA — https://www.ishares.com/us/products/239502/ishares-u-s-aerospace-defense-etf/latest-holdings.csv
+    # Aircraft, space and defense supply chains; civilian firearms and policing removed.
     {
         "exposure_id": "us_theme_aerospace_defense",
         "name": "航太軍工",
         "members": [
             "GE", "RTX", "BA", "LMT", "TDG", "NOC", "GD", "HWM", "HONA",
-            "LHX", "AXON", "RKLB", "ATI", "WWD", "CRS", "CW", "FTAI", "TXT",
-            "BWXT", "HEI", "HII", "KTOS", "HXL", "AVAV", "VSEC", "SARO", "MRCY",
-            "AIR", "KRMN", "DRS", "ACHR", "ARXS", "DCO", "ATRO", "LOAR", "RDW",
-            "VVX", "BETA", "LUNR", "FLY", "VOYG", "CDRE", "NPK", "RCAT", "SWBI",
-            "RGR", "YSS", "SPCE",
+            "LHX", "RKLB", "ATI", "WWD", "CRS", "CW", "FTAI", "TXT", "BWXT",
+            "HEI", "HII", "KTOS", "HXL", "AVAV", "VSEC", "SARO", "MRCY", "AIR",
+            "KRMN", "DRS", "ACHR", "ARXS", "DCO", "ATRO", "LOAR", "RDW", "VVX",
+            "BETA", "LUNR", "FLY", "VOYG", "CDRE", "NPK", "RCAT", "YSS", "SPCE",
         ],
     },
     # IYM — https://www.ishares.com/us/products/239503/ishares-u-s-basic-materials-etf/latest-holdings.csv
@@ -60,14 +65,15 @@ US_THEMES: list[dict] = [
         ],
     },
     # IAI — https://www.ishares.com/us/products/239504/ishares-u-s-broker-dealers-securities-exchanges-etf/latest-holdings.csv
+    # Brokerage, advisory and trading venues; ratings and financial-data vendors removed.
     {
         "exposure_id": "us_theme_brokers_exchanges",
         "name": "券商與交易所",
         "members": [
-            "GS", "MS", "SCHW", "CME", "ICE", "SPGI", "MCO", "HOOD", "NDAQ",
-            "MSCI", "COIN", "IBKR", "RJF", "LPLA", "TW", "SF", "FDS", "EVR",
-            "HLI", "JEF", "SNEX", "MKTX", "VIRT", "PIPR", "BGC", "MC", "MORN",
-            "LAZ", "PJT", "MIAX", "DFIN", "PWP", "OPY", "BTGO",
+            "GS", "MS", "SCHW", "CME", "ICE", "HOOD", "NDAQ", "COIN", "IBKR",
+            "RJF", "LPLA", "TW", "SF", "EVR", "HLI", "JEF", "SNEX", "MKTX",
+            "VIRT", "PIPR", "BGC", "MC", "LAZ", "PJT", "MIAX", "PWP", "OPY",
+            "BTGO",
         ],
     },
     # IYK — https://www.ishares.com/us/products/239505/ishares-u-s-consumer-staples-etf/latest-holdings.csv
@@ -128,20 +134,21 @@ US_THEMES: list[dict] = [
         ],
     },
     # IHF — https://www.ishares.com/us/products/239510/ishares-u-s-healthcare-providers-etf/latest-holdings.csv
+    # Care providers and care financing; general healthcare software removed.
     {
         "exposure_id": "us_theme_healthcare_providers",
         "name": "醫療服務",
         "members": [
-            "UNH", "CVS", "ELV", "VEEV", "HCA", "HUM", "CI", "CNC", "DGX",
-            "LH", "GH", "THC", "EHC", "MOH", "BTSG", "ENSG", "UHS", "HQY",
-            "CHE", "HNGE", "DVA", "HIMS", "RDNT", "OPCH", "CON", "DOCS", "LFST",
-            "HTFL", "WAY", "ACHC", "PRVA", "CRVL", "BKD", "BLLN", "NEO", "MD",
-            "PACS", "PGNY", "ADUS", "CLOV", "ASTH", "WGS", "ALHC", "AVAH", "AMN",
-            "SDGR", "PNTG", "USPH", "SGRY", "AGL", "CERT", "TDOC", "CSTL", "OMDA",
-            "HSTM", "OPK", "PHR", "EVH", "FLGT", "CYH",
+            "UNH", "CVS", "ELV", "HCA", "HUM", "CI", "CNC", "DGX", "LH",
+            "GH", "THC", "EHC", "MOH", "BTSG", "ENSG", "UHS", "HQY", "CHE",
+            "HNGE", "DVA", "HIMS", "RDNT", "OPCH", "CON", "LFST", "HTFL", "WAY",
+            "ACHC", "PRVA", "CRVL", "BKD", "BLLN", "NEO", "MD", "PACS", "PGNY",
+            "ADUS", "CLOV", "ASTH", "WGS", "ALHC", "AVAH", "AMN", "PNTG", "USPH",
+            "SGRY", "AGL", "TDOC", "CSTL", "OMDA", "OPK", "EVH", "FLGT", "CYH",
         ],
     },
     # ITB — https://www.ishares.com/us/products/239512/ishares-u-s-home-construction-etf/latest-holdings.csv
+    # Housing construction inputs and contractors; standalone furniture retailers removed.
     {
         "exposure_id": "us_theme_homebuilders",
         "name": "住宅營建供應鏈",
@@ -149,8 +156,8 @@ US_THEMES: list[dict] = [
             "DHI", "PHM", "NVR", "LEN", "SHW", "TOL", "LOW", "HD", "MAS",
             "LII", "IBP", "SKY", "CVCO", "MTH", "OC", "MHO", "SSD", "KBH",
             "MHK", "BLDR", "EXP", "FND", "FBIN", "TREX", "GRBK", "LPX", "UFPI",
-            "GFF", "CCS", "HAYW", "LGIH", "BZH", "MBC", "LZB", "ROCK", "HOV",
-            "NX", "DFH", "ARHS", "ETD", "BOBS", "JELD",
+            "GFF", "CCS", "HAYW", "LGIH", "BZH", "MBC", "ROCK", "HOV", "NX",
+            "DFH", "JELD",
         ],
     },
     # IYJ — https://www.ishares.com/us/products/239514/ishares-u-s-industrials-etf/latest-holdings.csv
@@ -307,29 +314,30 @@ US_THEMES: list[dict] = [
             "NREF", "CMTG",
         ],
     },
+    # Residential and care properties only; self-storage and life-science campuses excluded.
     # REZ — https://www.ishares.com/us/products/239545/ishares-residential-and-multisector-real-estate-etf/latest-holdings.csv
     {
         "exposure_id": "us_theme_residential_reits",
         "name": "住宅與照護 REITs",
         "members": [
-            "WELL", "PSA", "VMRK", "VTR", "EXR", "ESS", "INVH", "SUI", "OHI",
-            "MAA", "DOC", "ELS", "UDR", "AMH", "AHR", "CPT", "CUBE", "CTRE",
-            "ARE", "HR", "SBRA", "IRT", "NHI", "LTC", "JAN", "SMA", "DHC",
+            "WELL", "VMRK", "VTR", "ESS", "INVH", "SUI", "OHI",
+            "MAA", "DOC", "ELS", "UDR", "AMH", "AHR", "CPT", "CTRE",
+            "HR", "SBRA", "IRT", "NHI", "LTC", "JAN", "DHC",
             "MPT", "UMH", "CSR", "UHT", "NXRT", "NHP", "XRN", "CHCT", "BRT",
         ],
     },
     # POWR — https://www.ishares.com/us/products/239653/ishares-u-s-power-infrastructure-etf/latest-holdings.csv
+    # Electric utilities, generation and grid equipment; fuel miners/producers removed.
     {
         "exposure_id": "us_theme_power_infrastructure",
         "name": "電力基礎建設",
         "members": [
-            "PWR", "GEV", "ETN", "NEE", "EQT", "SO", "CEG", "DUK", "NVT",
-            "HUBB", "EXE", "FSLR", "AEP", "D", "VST", "ETR", "NXT", "XEL",
-            "GNRC", "EXC", "AR", "ED", "PEG", "RRC", "WEC", "VMI", "PCG",
-            "AEE", "DTE", "PPL", "CNP", "ES", "FE", "NRG", "ENS", "EIX",
-            "CMS", "EVRG", "POWL", "CNX", "LNT", "HCC", "TLN", "MYRG", "CNR",
-            "ENPH", "ITRI", "PNW", "AES", "OGE", "IDA", "SEDG", "AMR", "TXNM",
-            "ORA", "POR", "NWE", "CRK", "CWEN", "AVA", "SXC", "MGEE", "IIIN",
+            "PWR", "GEV", "ETN", "NEE", "SO", "CEG", "DUK", "NVT", "HUBB",
+            "FSLR", "AEP", "D", "VST", "ETR", "NXT", "XEL", "GNRC", "EXC",
+            "ED", "PEG", "WEC", "VMI", "PCG", "AEE", "DTE", "PPL", "CNP",
+            "ES", "FE", "NRG", "ENS", "EIX", "CMS", "EVRG", "POWL", "LNT",
+            "TLN", "MYRG", "CNR", "ENPH", "ITRI", "PNW", "AES", "OGE", "IDA",
+            "SEDG", "TXNM", "ORA", "POR", "NWE", "CWEN", "AVA", "MGEE", "IIIN",
             "RUN", "UTL",
         ],
     },
@@ -380,6 +388,7 @@ US_THEMES: list[dict] = [
         ],
     },
     # IGV — https://www.ishares.com/us/products/239771/ishares-expanded-tech-software-sector-etf/latest-holdings.csv
+    # Software publishers; quantum hardware, social platforms and crypto treasury names excluded.
     {
         "exposure_id": "us_theme_software",
         "name": "軟體",
@@ -388,10 +397,10 @@ US_THEMES: list[dict] = [
             "SNPS", "CDNS", "DDOG", "INTU", "APP", "ADSK", "WDAY", "ROP", "TTWO",
             "TEAM", "ZM", "ZS", "PTC", "NTNX", "DT", "RBRK", "FICO", "IOT",
             "U", "DOCU", "TRMB", "GWRE", "TYL", "MANH", "GEN", "HUBS", "ESTC",
-            "IDCC", "GTLB", "S", "ZETA", "DSGX", "AUR", "PCOR", "SNAP", "QLYS",
-            "CVLT", "OTEX", "BSY", "RNG", "VRNS", "PATH", "BOX", "ACIW", "DBX",
-            "APPF", "BB", "QBTS", "TTAN", "YOU", "TENB", "CCC", "QTWO", "WK",
-            "BILL", "DLB", "LIF", "SPSC", "FRSH", "PEGA", "ALRM", "TDC",
+            "GTLB", "S", "ZETA", "DSGX", "PCOR", "QLYS", "CVLT", "OTEX", "BSY",
+            "RNG", "VRNS", "PATH", "BOX", "ACIW", "DBX", "APPF", "BB", "TTAN",
+            "YOU", "TENB", "CCC", "QTWO", "WK", "BILL", "DLB", "LIF", "SPSC",
+            "FRSH", "PEGA", "TDC",
         ],
     },
     # IFRA — https://www.ishares.com/us/products/294315/ishares-u-s-infrastructure-etf/latest-holdings.csv
@@ -410,35 +419,34 @@ US_THEMES: list[dict] = [
             "OGE", "EMN", "CMC", "SSD", "AWI", "FLR", "ECG", "TEX",
         ],
     },
-    # IDRV — https://www.ishares.com/us/products/307332/ishares-self-driving-ev-and-tech-etf/latest-holdings.csv
+    # IDRV, BOTZ, DRIV; autonomous-driving systems, perception and robotaxi operators only.
+    # Driving systems, perception and robotaxi operators; no batteries, miners or generic auto parts.
     {
         "exposure_id": "us_theme_autonomous_driving",
         "name": "自駕車",
         "members": [
-            "TSLA", "RIVN", "ALV", "ALB", "AUR", "LEA", "GNTX", "QS", "BLBD",
-            "VC", "OUST", "AMPX", "ADNT", "LCID", "SLDP", "PSNY", "SERV", "CPS",
-            "ABAT", "STRT", "EVGO",
+            "TSLA", "AUR", "GNTX", "VC", "OUST", "SERV", "MBLY", "HSAI", "PONY",
+            "WRD",
         ],
     },
     # IHAK — https://www.ishares.com/us/products/307352/ishares-cybersecurity-and-tech-etf/latest-holdings.csv
+    # Cybersecurity products/services; physical security and diversified defense IT removed.
     {
         "exposure_id": "us_theme_cybersecurity",
         "name": "資安",
         "members": [
             "NTSK", "OKTA", "QLYS", "ZS", "CRWD", "S", "VRNS", "TENB", "PANW",
-            "FTNT", "SAIC", "CACI", "ALRM", "CHKP", "BAH", "CALX", "YOU", "ATEN",
-            "AKAM", "SAIL", "RDWR", "RPD", "OSPN", "ALLT", "GRRR",
+            "FTNT", "CHKP", "ATEN", "AKAM", "SAIL", "RDWR", "RPD", "OSPN", "ALLT",
         ],
     },
     # IDNA — https://www.ishares.com/us/products/308878/ishares-genomics-immunology-and-healthcare-etf/latest-holdings.csv
+    # Sequencing, gene editing, mRNA and gene-therapy platforms; general drug discovery excluded.
     {
         "exposure_id": "us_theme_genomics",
         "name": "基因醫療",
         "members": [
-            "MRNA", "TWST", "IOVA", "RVMD", "REGN", "MRK", "IBRX", "CAI", "EXEL",
-            "VRTX", "INCY", "BNTX", "ABCL", "IDYA", "NVAX", "RCUS", "CRSP", "VIR",
-            "NUVB", "PSNL", "JANX", "RIGL", "KURA", "VSTM", "CRVS", "ALVO", "PACB",
-            "DNA", "XNCR", "NTLA", "CTMX", "DSGN", "OCGN", "PRME",
+            "MRNA", "TWST", "BNTX", "ABCL", "CRSP", "PACB", "DNA", "NTLA", "OCGN",
+            "PRME", "VRTX",
         ],
     },
     # IBLC — https://www.ishares.com/us/products/326614/ishares-blockchain-and-tech-etf/latest-holdings.csv
@@ -453,38 +461,39 @@ US_THEMES: list[dict] = [
         ],
     },
     # EFRA — https://www.ishares.com/us/products/330188/ishares-environmental-infrastructure-and-industrials-etf/latest-holdings.csv
+    # Water, treatment and environmental services; rail, packaging and safety equipment removed.
     {
         "exposure_id": "us_theme_environmental_infrastructure",
         "name": "環保工程",
         "members": [
-            "VLTO", "WAB", "SW", "XYL", "AWK", "CLH", "WTRG", "WTS", "WMS",
-            "TTEK", "PNR", "CNM", "MSA", "BMI", "FELE", "MWA", "AWR", "CWT",
-            "NGVT", "HTO",
+            "VLTO", "XYL", "AWK", "CLH", "WTRG", "WTS", "WMS", "TTEK", "PNR",
+            "CNM", "BMI", "FELE", "MWA", "AWR", "CWT", "HTO",
         ],
     },
-    # ICOP — https://www.ishares.com/us/products/332280/ishares-copper-and-metals-mining-etf/latest-holdings.csv
+    # ICOP + COPX (https://www.globalxetfs.com/funds/copx/); Canadian holdings mapped to NYSE TECK/HBM/ERO.
     {
         "exposure_id": "us_theme_copper_mining",
         "name": "銅與多金屬礦業",
         "members": [
-            "FCX", "SCCO", "NEM", "RIO", "VALE", "AUGO", "NEXA",
+            "FCX", "SCCO", "TECK", "HBM", "ERO", "NEXA",
         ],
     },
     # ILIT — https://www.ishares.com/us/products/332281/ishares-lithium-miners-and-producers-etf/latest-holdings.csv
+    # Lithium producers/developers; mixed LIT basket retired to avoid duplicate producer signals.
     {
         "exposure_id": "us_theme_lithium_mining",
         "name": "鋰礦",
         "members": [
-            "SQM", "ALB", "LAC", "LAR", "SGML", "CRML", "ABAT",
+            "SQM", "ALB", "LAC", "LAR", "SGML", "CRML",
         ],
     },
     # IBAT — https://www.ishares.com/us/products/336296/ishares-energy-storage-materials-etf/latest-holdings.csv
+    # Batteries, storage, battery insulation and storage inverters; gases/hydrogen/generic materials excluded.
     {
         "exposure_id": "us_theme_battery_materials",
         "name": "儲能與電池材料",
         "members": [
-            "BE", "APD", "LIN", "ETN", "ENS", "ENPH", "ENTG", "DOW", "QS",
-            "SEDG", "PLUG", "FCEL", "AMPX", "EOSE", "FLNC", "BLDP", "ASPN",
+            "ENS", "ENPH", "QS", "SEDG", "AMPX", "EOSE", "FLNC", "ASPN",
         ],
     },
     # XRT — https://www.ssga.com/library-content/products/fund-data/etfs/us/holdings-daily-us-en-xrt.xlsx
@@ -531,14 +540,15 @@ US_THEMES: list[dict] = [
         ],
     },
     # XHB — https://www.ssga.com/library-content/products/fund-data/etfs/us/holdings-daily-us-en-xhb.xlsx
+    # Building products and residential construction; unrelated household retail removed.
     {
         "exposure_id": "us_theme_building_products",
         "name": "建材與居家修繕",
         "members": [
-            "SN", "WSM", "TT", "JCI", "W", "ALLE", "MAS", "SSD", "CSL",
-            "TOL", "DHI", "HD", "WMS", "LOW", "CVCO", "CARR", "LII", "NVR",
-            "PHM", "SKY", "LEN", "SGI", "MTH", "OC", "IBP", "MOD", "MHO",
-            "KBH", "BLDR", "CCS", "GRBK", "LGIH", "BZH", "HOV", "DFH",
+            "TT", "JCI", "ALLE", "MAS", "SSD", "CSL", "TOL", "DHI", "HD",
+            "WMS", "LOW", "CVCO", "CARR", "LII", "NVR", "PHM", "SKY", "LEN",
+            "SGI", "MTH", "OC", "IBP", "MOD", "MHO", "KBH", "BLDR", "CCS",
+            "GRBK", "LGIH", "BZH", "HOV", "DFH",
         ],
     },
     # XHE — https://www.ssga.com/library-content/products/fund-data/etfs/us/holdings-daily-us-en-xhe.xlsx
@@ -550,10 +560,10 @@ US_THEMES: list[dict] = [
             "BDX", "GEHC", "UFPT", "LMAT", "IDXX", "MDT", "GMED", "INSP", "SYK",
             "BFLY", "NEOG", "BAX", "STE", "ICUI", "ITGR", "EW", "PEN", "MMSI",
             "DXCM", "LNTH", "ENOV", "ABT", "PODD", "ZBH", "SOLV", "BBNX", "LIVN",
-            "CNMD", "BSX", "ALGN", "GKOS", "ASST", "TFX", "STAA", "IRTC", "NVCR",
-            "TMDX", "COO", "NVST", "AORT", "PRCT", "PLSE", "TNDM", "IART", "XRAY",
-            "SIBN", "AXGN", "BVS", "KMTS", "AVR", "CBLL", "MMED", "CERS", "TCMD",
-            "DCTH", "CLPT", "VREX", "OFIX", "ANGO", "SENS", "KIDS", "NPCE",
+            "CNMD", "BSX", "ALGN", "GKOS", "TFX", "STAA", "IRTC", "NVCR", "TMDX",
+            "COO", "NVST", "AORT", "PRCT", "PLSE", "TNDM", "IART", "XRAY", "SIBN",
+            "AXGN", "BVS", "KMTS", "AVR", "CBLL", "MMED", "CERS", "TCMD", "DCTH",
+            "CLPT", "VREX", "OFIX", "ANGO", "SENS", "KIDS", "NPCE",
         ],
     },
     # XHS — https://www.ssga.com/library-content/products/fund-data/etfs/us/holdings-daily-us-en-xhs.xlsx
@@ -571,6 +581,7 @@ US_THEMES: list[dict] = [
         ],
     },
     # XSW — https://www.ssga.com/library-content/products/fund-data/etfs/us/holdings-daily-us-en-xsw.xlsx
+    # Software and IT services; crypto treasury and physical security removed.
     {
         "exposure_id": "us_theme_software_services",
         "name": "軟體服務",
@@ -580,10 +591,10 @@ US_THEMES: list[dict] = [
             "RPD", "CVLT", "FTNT", "DXC", "DOCU", "GWRE", "CDNS", "IT", "TEAM",
             "FRSH", "GTLB", "TENB", "FFIV", "CCC", "AI", "APPN", "PANW", "ADSK",
             "QLYS", "BLKB", "BOX", "SAIL", "BSY", "OSPN", "ATEN", "SPT", "SPSC",
-            "FIVN", "YEXT", "MSFT", "AVPT", "RNG", "MSTR", "CTSH", "TDC", "NOW",
-            "RBLX", "MANH", "ESTC", "ZETA", "CXM", "IOT", "CRNC", "KVYO", "NTNX",
-            "PCOR", "ALRM", "VERX", "DBX", "TRMB", "YOU", "INTA", "TYL", "VRNS",
-            "RDVT", "WDAY", "AGYS", "WEAV", "EPAM", "WK", "RAMP", "BL",
+            "FIVN", "YEXT", "MSFT", "AVPT", "RNG", "CTSH", "TDC", "NOW", "RBLX",
+            "MANH", "ESTC", "ZETA", "CXM", "IOT", "CRNC", "KVYO", "NTNX", "PCOR",
+            "VERX", "DBX", "TRMB", "INTA", "TYL", "VRNS", "RDVT", "WDAY", "AGYS",
+            "WEAV", "EPAM", "WK", "RAMP", "BL",
         ],
     },
     # URA — https://www.globalxetfs.com/funds/ura/
@@ -595,22 +606,14 @@ US_THEMES: list[dict] = [
             "NKLR",
         ],
     },
-    # LIT — https://www.globalxetfs.com/funds/lit/
-    {
-        "exposure_id": "us_theme_lithium_batteries",
-        "name": "鋰電池",
-        "members": [
-            "RIO", "TSLA", "ALB", "SQM", "ENS", "LCID", "SGML",
-        ],
-    },
     # BOTZ — https://www.globalxetfs.com/funds/botz/
+    # Robot builders, surgical robotics, automation and perception; platforms/automakers/robotaxis excluded.
     {
         "exposure_id": "us_theme_robotics",
         "name": "機器人",
         "members": [
-            "ISRG", "NVDA", "CGNX", "AUR", "GOOGL", "TSLA", "DE", "SYM", "ROK",
-            "OUST", "BIDU", "HSAI", "PONY", "ALNT", "OMCL", "WRD", "PRCT", "AVEX",
-            "XPEV", "NOVT", "KDK", "SERV", "RR", "EH",
+            "ISRG", "CGNX", "SYM", "ROK", "OUST", "ALNT", "OMCL", "PRCT", "AVEX",
+            "NOVT", "SERV", "RR",
         ],
     },
     # CLOU — https://www.globalxetfs.com/funds/clou/
@@ -625,64 +628,59 @@ US_THEMES: list[dict] = [
         ],
     },
     # FINX — https://www.globalxetfs.com/funds/finx/
+    # Payments, financial software and digital financial platforms; standalone crypto miners excluded.
     {
         "exposure_id": "us_theme_fintech",
         "name": "金融科技",
         "members": [
             "HOOD", "PYPL", "XYZ", "COIN", "FISV", "GPN", "INTU", "AFRM", "SSNC",
-            "SOFI", "FIS", "CRCL", "TOST", "GWRE", "JKHY", "PAYP", "HQY", "RIOT",
-            "ACIW", "KLAR", "VIRT", "BLSH", "BILL", "CORZ", "SEZL", "CIFR", "GLXY",
-            "LMND", "MARA", "FOUR", "STNE", "BULL", "PAYO", "DLO", "NCNO", "UPST",
-            "FLYW", "PAY", "PAGS", "PURR", "HAPN", "KEEL", "PGY", "ETOR", "VERX",
-            "LU", "MITK", "BTGO", "PRTH", "CSHR", "CD", "TREE", "RPAY", "PSFE",
-            "BLND", "BKKT", "GEMI", "ABTC",
+            "SOFI", "FIS", "CRCL", "TOST", "GWRE", "JKHY", "PAYP", "HQY", "ACIW",
+            "KLAR", "VIRT", "BLSH", "BILL", "SEZL", "GLXY", "LMND", "FOUR", "STNE",
+            "BULL", "PAYO", "DLO", "NCNO", "UPST", "FLYW", "PAY", "PAGS", "PURR",
+            "HAPN", "PGY", "ETOR", "VERX", "LU", "MITK", "BTGO", "PRTH", "CSHR",
+            "CD", "TREE", "RPAY", "PSFE", "BLND", "BKKT", "GEMI",
         ],
     },
     # SOCL — https://www.globalxetfs.com/funds/socl/
+    # Social, dating and user-video platforms; commerce, music and marketing tools removed.
     {
         "exposure_id": "us_theme_social_media",
         "name": "社群媒體",
         "members": [
-            "META", "RDDT", "PINS", "NTES", "GOOGL", "SPOT", "MTCH", "BIDU", "SNAP",
-            "TME", "BILI", "PPLI", "JOYY", "DJT", "YELP", "CXM", "RUM", "NXDR",
-            "SPT", "WB", "GRND", "MOMO", "GRPN", "BMBL", "FVRR", "ANGI", "HUYA",
-            "YALA",
+            "META", "RDDT", "PINS", "GOOGL", "MTCH", "SNAP", "BILI", "JOYY", "DJT",
+            "YELP", "RUM", "NXDR", "WB", "GRND", "MOMO", "BMBL", "HUYA", "YALA",
         ],
     },
     # HERO — https://www.globalxetfs.com/funds/hero/
+    # Game content, engines and gaming hardware; general haptics licensing removed.
     {
         "exposure_id": "us_theme_video_games",
         "name": "遊戲",
         "members": [
-            "U", "NTES", "RBLX", "TTWO", "BILI", "CRSR", "GRVY", "TBCH", "IMMR",
-            "HUYA", "PLTK",
+            "U", "NTES", "RBLX", "TTWO", "BILI", "CRSR", "GRVY", "TBCH", "HUYA",
+            "PLTK",
         ],
     },
     # AIQ — https://www.globalxetfs.com/funds/aiq/
+    # AI platforms, accelerators, data software and server infrastructure; incidental AI users excluded.
     {
         "exposure_id": "us_theme_artificial_intelligence",
         "name": "人工智慧",
         "members": [
-            "PLTR", "MSFT", "SPCX", "META", "TSLA", "GOOGL", "ORCL", "AMZN", "AAPL",
-            "NVDA", "AMD", "TSM", "NFLX", "CSCO", "INTC", "MU", "AVGO", "SAP",
-            "BABA", "MRVL", "IBM", "SHOP", "CRM", "QCOM", "STX", "NOW", "UBER",
-            "ACN", "SNOW", "ADBE", "SNPS", "CDNS", "DDOG", "HPE", "APP", "NXPI",
-            "ZS", "NOK", "DT", "OKTA", "WIX", "WDAY", "ZBRA", "TWLO", "AI",
-            "SNAP", "DXC", "TRI", "CCC", "PEGA", "PATH", "GLOB", "G", "SMCI",
-            "GEHC", "TDC", "CLS", "ERIC", "EFX", "AMBA", "CRWV", "QUBT", "BIDU",
-            "SOUN", "PONY", "HUT",
+            "PLTR", "MSFT", "META", "GOOGL", "ORCL", "AMZN", "NVDA", "AMD", "TSM",
+            "INTC", "MU", "AVGO", "BABA", "MRVL", "IBM", "CRM", "HPE", "AI",
+            "SMCI", "CRWV", "SOUN", "SNOW",
         ],
     },
     # DRIV — https://www.globalxetfs.com/funds/driv/
+    # Automakers, batteries and auto-focused components; general chip/cloud platforms excluded.
     {
         "exposure_id": "us_theme_electric_vehicles",
         "name": "電動車",
         "members": [
-            "MSFT", "NVDA", "INTC", "GOOGL", "TSLA", "QCOM", "GM", "BE", "WAB",
-            "SWKS", "COHR", "NBIS", "NXPI", "F", "ITT", "ATI", "ON", "DCH",
-            "SITM", "SQM", "HY", "AMBA", "ENS", "BIDU", "ALB", "CBT", "THRM",
-            "VC", "BB", "MBLY", "NIO", "XPEV", "AMPX", "ALGM", "PLUG", "QS",
-            "AEVA", "LCID", "INDI",
+            "TSLA", "GM", "F", "NXPI", "ON", "SQM", "ENS", "ALB", "CBT",
+            "THRM", "VC", "MBLY", "NIO", "XPEV", "AMPX", "ALGM", "QS", "AEVA",
+            "LCID", "INDI",
         ],
     },
     # SIL — https://www.globalxetfs.com/funds/sil/
@@ -728,7 +726,7 @@ US_THEMES: list[dict] = [
     # IYW, IYJ, IDGT; selected directly exposed holdings (issuer links above).
     {
         "exposure_id": "us_theme_ai_servers",
-        "name": "AI伺服器",
+        "name": "AI伺服器與資料中心",
         "members": [
             "DELL", "HPE", "SMCI", "VRT", "ANET", "NTAP",
         ],
@@ -763,6 +761,44 @@ US_THEMES: list[dict] = [
         "name": "中概股 ADR",
         "members": [
             "BABA", "BIDU", "NTES", "TME", "BILI", "WB", "JOYY", "HUYA",
+        ],
+    },
+    # SOXX, IYW, AIQ; memory, storage and controllers. SIMO: https://www.siliconmotion.com/company/overview
+    # Includes the closely related disk-storage and memory-controller names requested in review.
+    {
+        "exposure_id": "us_theme_memory",
+        "name": "記憶體",
+        "members": [
+            "MU", "WDC", "STX", "SNDK", "RMBS", "SIMO",
+        ],
+    },
+    # SOXX plus issuer-verified Taiwan ADS: https://www.chipmos.com/english/ir/company.aspx
+    # SIMO ADS: https://www.sec.gov/Archives/edgar/data/1329394/000119312526343271/d160732dex991.htm
+    # SIMO Taiwan HQ: https://ir.siliconmotion.com/news-releases/news-release-details-84/
+    # HIMX ADS: https://www.sec.gov/Archives/edgar/data/1342338/000110465926035507/himx-20251231xex2d4.htm
+    {
+        "exposure_id": "us_theme_taiwan_adrs",
+        "name": "台廠 ADR",
+        "members": [
+            "TSM", "UMC", "ASX", "HIMX", "SIMO", "IMOS",
+        ],
+    },
+    # QTUP direct equity holdings, 2026-10-15: https://www.defianceetfs.com/qtup-full-holdings/
+    # Pure quantum hardware/platform issuers; no diversified tech or similarly named storage companies.
+    {
+        "exposure_id": "us_theme_quantum_computing",
+        "name": "量子電腦",
+        "members": [
+            "IONQ", "RGTI", "QBTS", "QUBT", "QNT", "INFQ",
+        ],
+    },
+    # SOXX; wafer fabrication, metrology, testing and process-material handling equipment.
+    # Fabrication, inspection, test and process-handling equipment; no chip designers.
+    {
+        "exposure_id": "us_theme_semiconductor_equipment",
+        "name": "半導體設備",
+        "members": [
+            "AMAT", "LRCX", "KLAC", "ASML", "TER", "ENTG",
         ],
     },
 ]
