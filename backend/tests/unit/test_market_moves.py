@@ -781,3 +781,60 @@ async def test_scan_fetches_instruments_concurrently(monkeypatch):
                         datetime.fromtimestamp(OPEN + 300, timezone.utc), 1.0)
     assert time.monotonic() - t0 < 0.6                              # four indices, not 4 x 0.2s
     assert [r["id"] for r in out["rows"]] == [i.id for i in us.indices]
+
+
+
+class _Resp:
+    def __init__(self, status, body=None):
+        self.status_code, self._body = status, body or {}
+
+    def json(self):
+        return self._body
+
+
+def _session(responses, seen):
+    class Session:
+        def __init__(self, **kw):
+            seen.append(kw)
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_a):
+            return False
+
+        async def get(self, url, params=None):
+            r = responses.pop(0)
+            if isinstance(r, Exception):
+                raise r
+            return r
+    return Session
+
+
+@pytest.mark.asyncio
+async def test_yahoo_requests_impersonate_a_browser_and_retry_a_429(monkeypatch):
+    seen = []
+    monkeypatch.setattr(yahoo_chart, "AsyncSession", _session([_Resp(429), _Resp(200, {"ok": 1})], seen))
+
+    async def no_sleep(_s):
+        return None
+    monkeypatch.setattr(yahoo_chart.asyncio, "sleep", no_sleep)
+    assert await yahoo_chart._get_json("https://y/chart", {}) == {"ok": 1}
+    assert [kw["impersonate"] for kw in seen] == ["chrome", "chrome"]
+
+
+@pytest.mark.asyncio
+async def test_yahoo_network_errors_and_hard_statuses_become_yahoo_errors(monkeypatch):
+    from curl_cffi.requests.exceptions import RequestException
+
+    async def no_sleep(_s):
+        return None
+    monkeypatch.setattr(yahoo_chart.asyncio, "sleep", no_sleep)
+    monkeypatch.setattr(yahoo_chart, "AsyncSession", _session([RequestException("reset")], []))
+    with pytest.raises(YahooChartError, match="RequestException"):
+        await yahoo_chart._get_json("https://y/chart", {}, retries=0)
+    responses = [_Resp(404), _Resp(200)]
+    monkeypatch.setattr(yahoo_chart, "AsyncSession", _session(responses, []))
+    with pytest.raises(YahooChartError, match="HTTP 404"):
+        await yahoo_chart._get_json("https://y/chart", {})
+    assert len(responses) == 1                                       # a 404 is not retried

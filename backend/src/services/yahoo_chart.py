@@ -17,7 +17,8 @@ import statistics
 from dataclasses import asdict, dataclass, field
 from typing import Optional
 
-import httpx
+from curl_cffi.requests import AsyncSession
+from curl_cffi.requests.exceptions import RequestException
 
 from src.cache.redis_client import cache_get, cache_set
 
@@ -32,9 +33,12 @@ SPARK_CONCURRENCY = 6
 # serial, retrying walk over them outlived Cloudflare's 100s edge timeout on dev.
 SPARK_BUDGET = 30.0
 NEWS_URL = "https://query1.finance.yahoo.com/v1/finance/search"
-# Without a browser UA the endpoint answers 429 to most datacentre IPs.
-_HEADERS = {"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
-                          "(KHTML, like Gecko) Chrome/126.0 Safari/537.36"}
+# Yahoo answers 429 to plain Python HTTP clients from datacenter IPs — verified on dev
+# 2026-10-15, every chart call from the VPS was a 429 over httpx. It fingerprints the
+# TLS handshake, not the User-Agent, so the request has to look like a browser's:
+# curl_cffi impersonating Chrome, the same fix yfinance (already a dependency here)
+# ships for the same 429s.
+_IMPERSONATE = "chrome"
 _TIMEOUT = 10.0
 _RETRIES = 2
 INTRADAY_TTL = 60
@@ -98,14 +102,14 @@ async def _get_json(url: str, params: dict, retries: int = _RETRIES) -> dict:
     last: Exception = YahooChartError("not attempted")
     for attempt in range(retries + 1):
         try:
-            async with httpx.AsyncClient(timeout=_TIMEOUT, headers=_HEADERS) as client:
+            async with AsyncSession(impersonate=_IMPERSONATE, timeout=_TIMEOUT) as client:
                 resp = await client.get(url, params=params)
             if resp.status_code == 200:
                 return resp.json()
             last = YahooChartError(f"yahoo {url} {params} -> HTTP {resp.status_code}")
             if resp.status_code not in (429, 500, 502, 503, 504):
                 break
-        except (httpx.HTTPError, ValueError) as e:
+        except (RequestException, ValueError) as e:
             last = YahooChartError(f"yahoo {url} {params} -> {type(e).__name__}: {e}")
         if attempt < retries:
             await asyncio.sleep(1.5 * (attempt + 1))
