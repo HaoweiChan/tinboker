@@ -145,6 +145,36 @@ export const GlobalPlayer: React.FC = () => {
     const activeSkippableSection = sections.find(
         (s) => s.skippable && playbackState.position >= s.timestampSeconds && playbackState.position < (s.endSeconds || s.timestampSeconds)
     );
+    // A small one-line chip, not a block: the label before the first 「：」 ("開場"),
+    // since the full section title wrapped to four lines on a phone and shoved the title
+    // row aside. The full title stays in the tooltip.
+    // Skip through back-to-back skippable segments in one tap: 開場 -> 業配 -> 開場 run
+    // edge to edge (曼報 EP132: 0-13s, 13-79s, 79-183s), so skipping only the first
+    // dropped the listener into the next one and needed three taps.
+    const skipTarget = (() => {
+        if (!activeSkippableSection) return null;
+        let end = activeSkippableSection.endSeconds || activeSkippableSection.timestampSeconds;
+        for (let next = true; next;) {
+            next = false;
+            for (const s of sections) {
+                if (s.skippable && s.endSeconds && s.timestampSeconds <= end + 2 && s.endSeconds > end) {
+                    end = s.endSeconds;
+                    next = true;
+                }
+            }
+        }
+        return end;
+    })();
+    const skipChip = activeSkippableSection && skipTarget !== null && (
+        <button
+            onClick={() => handleSectionClick(skipTarget)}
+            className="inline-flex shrink-0 items-center gap-1 rounded-full border border-accent-info/50 bg-accent-info-soft px-2.5 py-0.5 text-2xs font-semibold text-accent-info whitespace-nowrap transition-colors hover:bg-accent-info hover:text-white cursor-pointer animate-in fade-in duration-200"
+            title={`略過 ${activeSkippableSection.title}`}
+        >
+            略過{activeSkippableSection.title.split(/[:：]/)[0].trim().slice(0, 8)}
+            <SkipForward size={11} className="fill-current" />
+        </button>
+    );
 
     // One track, two placements: inline beside the times from sm up, and on a phone a
     // full-width strip along the player's top edge — inline it was squeezed to ~110px
@@ -348,16 +378,7 @@ export const GlobalPlayer: React.FC = () => {
                                                 <ExternalLink size={12} />
                                             </a>
                                         )}
-                                        {activeSkippableSection && (
-                                            <button
-                                                onClick={() => handleSectionClick(activeSkippableSection.endSeconds || activeSkippableSection.timestampSeconds)}
-                                                className="mr-1 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-accent-info hover:bg-accent-info/90 text-white text-xs font-semibold shadow transition-all cursor-pointer animate-in fade-in slide-in-from-right duration-200"
-                                                title={`略過 ${activeSkippableSection.title}`}
-                                            >
-                                                <span>略過 {activeSkippableSection.title}</span>
-                                                <SkipForward size={12} className="fill-current text-white" />
-                                            </button>
-                                        )}
+                                        {skipChip && <span className="hidden sm:inline-flex mr-1">{skipChip}</span>}
                                         {sections.length > 0 && (
                                             <button
                                                 onClick={() => setIsExpanded(!isExpanded)}
@@ -391,6 +412,7 @@ export const GlobalPlayer: React.FC = () => {
                                     <span className="font-mono tabular-nums whitespace-nowrap shrink-0">
                                         {formatTime(playbackState.position)} / {formatTime(playbackState.duration)}
                                     </span>
+                                    {skipChip}
                                     {unreachableSeek !== null && (
                                         <a
                                             href={`https://open.spotify.com/episode/${spotifyEpisodeId}?t=${unreachableSeek}`}

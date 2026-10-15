@@ -27,11 +27,16 @@ logger = logging.getLogger(__name__)
 CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
 SPARK_URL = "https://query1.finance.yahoo.com/v8/finance/spark"
 SPARK_BATCH = 20
-SPARK_TTL = 120
-SPARK_CONCURRENCY = 6
+# 5 min: the giants prefilter only nominates names for a full chart fetch, so a quote
+# a few minutes old is enough, and it re-asks Yahoo a fifth as often as a 60s tick.
+SPARK_TTL = 300
+# 2, not 6: six concurrent spark calls from the VPS drew HTTP 429 on most batches of a
+# theme scan in the first prod window (v0.14.4, 2026-10-15, ~13 per scan).
+SPARK_CONCURRENCY = 2
 # The whole batched scan, not one request: every theme's members is ~30 batches, and a
-# serial, retrying walk over them outlived Cloudflare's 100s edge timeout on dev.
-SPARK_BUDGET = 30.0
+# serial, retrying walk over them outlived Cloudflare's 100s edge timeout on dev. At
+# concurrency 2 those batches need ~15 rounds, so 60s, still under that edge timeout.
+SPARK_BUDGET = 60.0
 NEWS_URL = "https://query1.finance.yahoo.com/v1/finance/search"
 # Yahoo answers 429 to plain Python HTTP clients from datacenter IPs — verified on dev
 # 2026-10-15, every chart call from the VPS was a 429 over httpx. It fingerprints the

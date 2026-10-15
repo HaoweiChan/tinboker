@@ -36,6 +36,15 @@ export interface ChangelogEntry {
 //   docs/workflows/deploy-flow.md § "In-app changelog (What's new)".
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.14.7',
+    date: '2026-10',
+    items: [
+      '略過開場、業配更穩定：按一次就到正確位置，相連的開場和業配會一起跳過。',
+      '點摘要時間、前進或倒退 15 秒，不會再偶爾跳回這集的開頭。',
+      '「略過」改成時間旁邊的小按鈕，手機上不再擠到節目標題。',
+    ],
+  },
+  {
     version: '0.14.4',
     date: '2026-10',
     items: [
