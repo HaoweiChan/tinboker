@@ -143,11 +143,15 @@ document that reports no error**: the old inline summary still renders, while
 `related_tickers`, `tags` and `sector_exposures` have been replaced by the pipeline's.
 Observed on 股癌 EP127 — a body linking 40 tickers next to a `related_tickers` list of 11.
 
-If you do need to move an episode from one path to the other, clear the regen-only inline
-fields (`summary_content`, `events_markdown`, `marp_markdown`, `ticker_marp_markdown`) so
-the surviving `*_url` artifacts are what gets served. **When both paths have been run over
-one episode, the pipeline's output is the one that stands** — the agent path only earns a
-commit once it has been shown to match the corpus.
+To move an existing episode to the pipeline, use `--rerun-from summarize --episode ID`.
+This path requires the existing transcript and retained audio, complete generated-role
+provenance, and successfully uploaded replacement artifacts. It then clears the six
+stored inline caches (`summary_content`, `events_markdown`, `marp_markdown`,
+`ticker_marp_markdown`, `sentences_markdown_content`, `ticker_insights_content`), clears
+obsolete derived-artifact links, and replaces the episode's ticker snapshot. It records
+the models used by the new pipeline run instead of retaining old Regen metadata.
+Do not clear the old content manually before generation. A failed completeness check
+must stop the conversion. Set `PODCAST_SOCIAL_ENABLED=false` for content-only repairs.
 
 ### Two things that fail silently
 

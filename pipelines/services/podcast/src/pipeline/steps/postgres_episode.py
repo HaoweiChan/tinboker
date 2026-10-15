@@ -36,7 +36,12 @@ from src.podcast.exporters.postgres_mirror import SCHEMA as _SCHEMA
 from ..config import PipelineConfig
 from ..episode_data import EpisodeData
 from ..service_container import ServiceContainer
-from ..utils import create_episode_object
+from ..utils import (
+    create_episode_object,
+    has_complete_regen_provenance,
+    required_artifact_urls,
+    retain_episode_audio,
+)
 
 _DDL = f"""
 CREATE SCHEMA IF NOT EXISTS "{_SCHEMA}";
@@ -113,6 +118,36 @@ _PLATFORM_OWNED_KEYS = (
     "number_click",
 )
 
+_REGEN_INLINE_FIELDS = (
+    "summary_content",
+    "events_markdown_content",
+    "sentences_markdown_content",
+    "marp_markdown_content",
+    "ticker_insights_content",
+    "ticker_marp_markdown_content",
+)
+
+# The summarize rerun re-uploads these derived artifacts. An omitted artifact
+# must clear its old pointer as well as its inline content, or readers can show
+# a previous generation beside the new summary. MP3/transcript pointers are
+# source inputs and remain untouched.
+_SUMMARY_ARTIFACT_URL_FIELDS = (
+    "summary_url", "summary_public_url",
+    "summary_image_url", "summary_image_public_url",
+    "events_markdown_url", "events_markdown_public_url",
+    "sentences_markdown_url", "sentences_markdown_public_url",
+    "pptx_url", "pptx_public_url",
+    "marp_markdown_url", "marp_markdown_public_url",
+    "ticker_insights_url", "ticker_insights_public_url",
+    "ticker_marp_markdown_url", "ticker_marp_markdown_public_url",
+)
+
+
+def _clear_regen_inline_content(doc: dict) -> None:
+    """Make artifact-backed readers fetch only content from the new run."""
+    for field in _REGEN_INLINE_FIELDS:
+        doc[field] = None
+
 
 def _as_int(value):
     try:
@@ -128,6 +163,32 @@ def _as_datetime(value):
         except ValueError:
             return None
     return value
+
+
+def _successful_summarize_regeneration(config: PipelineConfig, episode_data: EpisodeData) -> bool:
+    """Only replace Regen content after generated artifacts are complete."""
+    if config.rerun_from != "summarize":
+        return False
+    summary = episode_data.summary_result
+    if not isinstance(summary, dict):
+        return False
+    text = summary.get("summary_text")
+    metadata = summary.get("generation_metadata")
+    required_urls = required_artifact_urls(
+        store_audio=retain_episode_audio(episode_data.api_data, config.store_audio)
+    )
+    if episode_data.gcs_urls and episode_data.gcs_urls.get("mp3_url"):
+        # A summarize rerun preserves any existing MP3 even if this invocation
+        # requested no new audio upload.
+        required_urls = tuple(dict.fromkeys((*required_urls, "mp3_url")))
+    return bool(
+        isinstance(text, str)
+        and text.strip()
+        and not summary.get("is_placeholder")
+        and has_complete_regen_provenance(metadata)
+        and isinstance(episode_data.gcs_urls, dict)
+        and all(episode_data.gcs_urls.get(field) for field in required_urls)
+    )
 
 
 def _merge_onto_stored(incoming: dict, stored: dict) -> dict:
@@ -208,6 +269,25 @@ def persist_episode(
     doc["episode_id"] = episode_id
     if not doc.get("podcast_name") and podcast_name:
         doc["podcast_name"] = podcast_name
+
+    # A summarize rerun is the supported conversion from regen-inline content to
+    # pipeline artifacts. The summary step's pre-write gate and the uploaded
+    # summary URL prove this run succeeded; set nulls in the same JSONB upsert so
+    # backend readers fall through to the just-written artifact. A failed or
+    # incomplete run leaves the previous inline content and provenance untouched.
+    if config.rerun_from == "summarize":
+        if not _successful_summarize_regeneration(config, episode_data):
+            raise RuntimeError(
+                "Refusing summarize rerun persistence without generated model provenance "
+                "and a newly uploaded summary artifact."
+            )
+        _clear_regen_inline_content(doc)
+        for field in _SUMMARY_ARTIFACT_URL_FIELDS:
+            doc[field] = episode_data.gcs_urls.get(field)
+        doc["generation_metadata"] = episode_data.summary_result["generation_metadata"]
+        # This Regen-only exception is no longer applicable once the pipeline
+        # has written its ordinary summary + image + transcript artifact set.
+        doc["artifact_completion_policy"] = None
 
     # DDL first, on its OWN autocommit connection. CREATE INDEX IF NOT EXISTS takes
     # a ShareLock held until commit, so running it inside the write transaction

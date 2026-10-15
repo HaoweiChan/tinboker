@@ -62,6 +62,7 @@ class _FakeConn:
 
 class _Config:
     rerun_from = None
+    store_audio = False
 
 
 class _Episode:
@@ -220,8 +221,78 @@ def test_reingest_preserves_user_edited_summary_and_platform_fields(monkeypatch)
     assert doc["some_frontend_owned_field"] == "keep me"
     # ...but pipeline-owned content IS refreshed
     assert doc["summary_content"] == "fresh summary"
-    # and the promoted counter columns follow the merged doc, not the fresh zeros
+    # and promoted counter columns follow the merged doc, not the fresh zeros
     assert params[5] == 42 and params[6] == 99
+
+
+def test_summarize_rerun_clears_regen_inline_fields_after_success(monkeypatch):
+    _stub_episode_build(monkeypatch)
+    monkeypatch.setenv("EPISODE_DATABASE_URL", "postgresql://x/y")
+    config = _Config()
+    config.rerun_from = "summarize"
+    data = _EpisodeData()
+    data.gcs_urls = {
+        "mp3_url": "gs://b/m", "transcript_url": "https://b/transcript.json",
+        "summary_url": "gs://b/new.md", "summary_image_url": "https://b/summary.svg",
+    }
+    required_roles = ("extractor", "writer", "key_insights", "ticker_extractor", "marp_writer")
+    provenance = {
+        role: {
+            "source": "generated", "provider": "openrouter", "model": "actual/model",
+            "output_sha256": "a" * 64,
+        }
+        for role in required_roles
+    }
+    data.summary_result = {
+        "summary_text": "new article",
+        "generation_metadata": {"version": 1, "roles": provenance},
+    }
+    stored = {
+        "summary_content": "old inline article",
+        "events_markdown_content": "old events",
+        "marp_markdown_content": "old slides",
+        "ticker_marp_markdown_content": "old ticker slides",
+        "events_markdown_url": "https://old/events.md",
+        "ticker_insights_url": "https://old/tickers.json",
+        "ticker_marp_markdown_url": "https://old/ticker-slides.md",
+        "artifact_completion_policy": {"allow_missing_audio": True},
+    }
+    cur = _FakeCursor(stored=stored)
+    monkeypatch.setattr(psycopg, "connect", lambda *a, **k: _FakeConn(cur))
+
+    persist_episode(config, _Services(), data)
+
+    doc = [(s, p) for s, p in cur.executed if "INSERT INTO" in s][0][1][-1].obj
+    assert all(doc[field] is None for field in postgres_episode._REGEN_INLINE_FIELDS)
+    assert doc["generation_metadata"] == data.summary_result["generation_metadata"]
+    assert doc["artifact_completion_policy"] is None
+    assert doc["summary_url"] == "gs://b/new.md"
+    assert doc["events_markdown_url"] is None
+    assert doc["ticker_insights_url"] is None
+    assert doc["ticker_marp_markdown_url"] is None
+
+
+@pytest.mark.parametrize("summary_result,gcs_urls", [
+    ({"summary_text": "new article", "generation_metadata": {}}, {"summary_url": "gs://b/new.md"}),
+    ({"summary_text": "new article", "generation_metadata": {"roles": {"writer": {}}}}, {"transcript_url": "gs://b/t"}),
+])
+def test_summarize_rerun_refuses_to_clear_old_content_without_complete_success(
+    monkeypatch, summary_result, gcs_urls
+):
+    _stub_episode_build(monkeypatch)
+    monkeypatch.setenv("EPISODE_DATABASE_URL", "postgresql://x/y")
+    config = _Config()
+    config.rerun_from = "summarize"
+    data = _EpisodeData()
+    data.gcs_urls = gcs_urls
+    data.summary_result = summary_result
+    cur = _FakeCursor(stored={"summary_content": "old inline article"})
+    monkeypatch.setattr(psycopg, "connect", lambda *a, **k: _FakeConn(cur))
+
+    with pytest.raises(RuntimeError, match="generated model provenance"):
+        persist_episode(config, _Services(), data)
+
+    assert not any("INSERT INTO" in sql for sql, _ in cur.executed)
 
 
 def test_merge_lets_a_real_regeneration_replace_platform_owned_lists():

@@ -28,6 +28,13 @@ this is caller-attested, not independently verified. Unchanged roles retain thei
 metadata. Reused/manual/unknown roles are never assigned a fabricated generation time.
 Auxiliary calls are recorded only by the server after a response: role, provider,
 model, `model_evidence: response|request`, generation timestamp and input SHA-256.
+
+The normal content pipeline also writes version 1 provenance. Its `calls` list records
+successful parsed responses with input/output hashes and response or request evidence;
+`roles` maps `key_insights_extractor` to `key_insights` for the shared role contract.
+Deterministically padded key insights must not be represented as a completed generated
+role. A successful explicit summarize rerun replaces the old generation's metadata and
+inline content caches together; historical metadata must not describe replacement content.
 Here provider is the transport (`local` or `openrouter`); request evidence explicitly
 means the response did not identify its model, not a claim of verified model identity.
 Caller submissions cannot supply auxiliary claims. Preview and commit share this payload.

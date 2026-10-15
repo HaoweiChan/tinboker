@@ -118,6 +118,7 @@ class SummarizeService:
                     sector_exposure_ids = api_result.get("sector_exposure_ids") or []
                     sector_ids = api_result.get("sector_ids") or []
                     unresolved_market_trend_ids = api_result.get("unresolved_market_trend_ids") or []
+                    generation_metadata = api_result.get("generation_metadata") or {}
                     # Canonical tags/related_tickers from the pipeline's
                     # derive_tags_tickers node (single source of truth; the consumer
                     # prefers these over the placeholder ticker extraction below).
@@ -140,6 +141,7 @@ class SummarizeService:
                     sector_exposure_ids = []
                     sector_ids = []
                     unresolved_market_trend_ids = []
+                    generation_metadata = {}
                     cb_tags = None
                     cb_related_tickers = None
 
@@ -178,6 +180,7 @@ class SummarizeService:
                     'sector_exposure_ids': sector_exposure_ids,
                     'sector_ids': sector_ids,
                     'unresolved_market_trend_ids': unresolved_market_trend_ids,
+                    'generation_metadata': generation_metadata,
                 }
                 # Surface the pipeline's canonical tags so the consumer prefers them
                 # over re-deriving (kept as a key only when provided).

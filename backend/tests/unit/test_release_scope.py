@@ -5,7 +5,7 @@ zh-TW (language allowlist) + the 1-month (released_at_ms recency) window.
 These exercise the pure/static helpers so no Firestore/Postgres/GCS clients are
 constructed.
 """
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -110,8 +110,68 @@ def test_episode_release_ms_prefers_spotify_date():
         "財報狗", created_ms=2_000, released_ms=9_999_999_999_999,
         spotify_release_date="2026-03-07",
     )
-    expected = int(datetime.strptime("2026-03-07", "%Y-%m-%d").timestamp() * 1000)
+    expected = int(datetime(2026, 3, 7, tzinfo=timezone.utc).timestamp() * 1000)
     assert PodcastService._episode_release_ms(ep) == expected
+
+
+def test_spotify_iso_timestamp_remains_authoritative():
+    ep = _ep(
+        "財報狗", created_ms=1,
+        released_ms=_ms(datetime(2026, 3, 7, 23, 0, tzinfo=timezone.utc)),
+        spotify_release_date="2026-03-07T12:30:00Z",
+    )
+    expected = _ms(datetime(2026, 3, 7, 12, 30, tzinfo=timezone.utc))
+    assert PodcastService._episode_release_ms(ep) == expected
+
+
+def test_matching_spotify_day_uses_precise_time_and_raw_dict_matches():
+    released = datetime(2026, 7, 17, 8, 2, 6, tzinfo=timezone.utc)
+    released_ms = _ms(released)
+    ep = _ep(
+        "曼報", created_ms=1, released_ms=released_ms,
+        spotify_release_date="2026-07-17",
+    )
+    service = PodcastService.__new__(PodcastService)
+    service.transformer = EpisodeTransformer()
+    raw = {"spotify_release_date": "2026-07-17", "released_at_ms": released_ms}
+
+    assert PodcastService._episode_release_ms(ep) == released_ms
+    assert service._dict_release_ms(raw) == released_ms
+
+
+def test_release_scope_accepts_exact_90_day_boundary_and_rejects_older():
+    now = datetime(2026, 10, 15, 8, 2, 6, tzinfo=timezone.utc)
+    boundary = now - timedelta(days=90)
+    boundary_ms = _ms(boundary)
+    boundary_ep = _ep(
+        "曼報", created_ms=_ms(now), released_ms=boundary_ms,
+        spotify_release_date=boundary.date().isoformat(),
+    )
+    old_ep = _ep(
+        "曼報", created_ms=_ms(now), released_ms=boundary_ms - 1,
+        spotify_release_date=boundary.date().isoformat(),
+    )
+
+    assert PodcastService._scope_episodes([boundary_ep], None, boundary_ms) == [boundary_ep]
+    assert PodcastService._scope_episodes([old_ep], None, boundary_ms) == []
+
+
+def test_spotify_date_wins_when_precise_timestamp_disagrees():
+    expected = PodcastService._spotify_release_ms("2026-07-17")
+    service = PodcastService.__new__(PodcastService)
+    service.transformer = EpisodeTransformer()
+    ep = _ep(
+        "曼報", created_ms=1,
+        released_ms=_ms(datetime(2026, 7, 16, 23, 59, tzinfo=timezone.utc)),
+        spotify_release_date="2026-07-17",
+    )
+    raw = {
+        "spotify_release_date": "2026-07-17",
+        "released_at_ms": _ms(datetime(2026, 7, 16, 23, 59, tzinfo=timezone.utc)),
+    }
+
+    assert PodcastService._episode_release_ms(ep) == expected
+    assert service._dict_release_ms(raw) == expected
 
 
 def test_scope_language_allowlist_drops_out_of_scope_shows():
