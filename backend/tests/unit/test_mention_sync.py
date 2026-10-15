@@ -160,6 +160,19 @@ def test_sync_ticker_mentions_heals_start_s_of_existing_rows(session, monkeypatc
     assert ms.sync_ticker_mentions(session) == 0  # second pass changes nothing
 
 
+def test_sync_ticker_mentions_follows_a_regenerated_stance(session, monkeypatch):
+    """A regenerated episode keeps its mention keys but can change its view; the row
+    must follow (鈔錢部署 kept 中立 on 聯發科 after a rerun that said 看多)."""
+    row = {**_insight_row(), "sentiment_label": "NEUTRAL", "bluf_thesis": "舊版"}
+    monkeypatch.setattr(ms, "_fetch_recent_insight_rows", lambda days: [row])
+    ms.sync_ticker_mentions(session)
+
+    row.update(sentiment_label="BULLISH", bluf_thesis="新版")
+    assert ms.sync_ticker_mentions(session) == 0  # updated, not re-inserted
+    m = session.query(ContentMention).one()
+    assert (m.sentiment_label, m.thesis) == ("BULLISH", "新版")
+
+
 def test_parse_start_s_shapes():
     assert ms._parse_start_s([{"start_time": 1575708}]) == pytest.approx(1575.708)
     assert ms._parse_start_s([{"start_time": "3695725"}]) == pytest.approx(3695.725)  # ms as string

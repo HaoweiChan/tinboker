@@ -145,11 +145,17 @@ def _delete_stale_mentions(
 def sync_ticker_mentions(db: Session, days: int = SYNC_LOOKBACK_DAYS) -> int:
     """Reconcile ticker mentions with current sources. Returns rows inserted.
 
-    Existing rows whose mention_start_s no longer matches the source get it
-    re-set (heals the rows written while ms were stored as seconds); after
-    the first pass that is a no-op."""
+    Existing rows follow their source: mention_start_s (heals the rows written while
+    ms were stored as seconds), and the stance/thesis, which change when an episode is
+    regenerated. After the first pass that is a no-op."""
     rows = _fetch_recent_insight_rows(days)
-    stored = dict(db.query(ContentMention.mention_key, ContentMention.mention_start_s).all())
+    stored = {
+        key: (start_s, label, thesis)
+        for key, start_s, label, thesis in db.query(
+            ContentMention.mention_key, ContentMention.mention_start_s,
+            ContentMention.sentiment_label, ContentMention.thesis,
+        )
+    }
     seen = set(stored)
     current_keys: set[str] = set()
     inserted = healed = 0
@@ -163,10 +169,16 @@ def sync_ticker_mentions(db: Session, days: int = SYNC_LOOKBACK_DAYS) -> int:
         current_keys.add(key)
         start_s = _parse_start_s(row.get("reasons"))
         if key in seen:
-            if start_s is not None and stored[key] != start_s:
-                db.query(ContentMention).filter(ContentMention.mention_key == key).update(
-                    {"mention_start_s": start_s}
-                )
+            old_start, old_label, old_thesis = stored.get(key, (None, None, None))
+            changes = {}
+            if start_s is not None and old_start != start_s:
+                changes["mention_start_s"] = start_s
+            if row.get("sentiment_label") != old_label:
+                changes["sentiment_label"] = row.get("sentiment_label")
+            if row.get("bluf_thesis") != old_thesis:
+                changes["thesis"] = row.get("bluf_thesis")
+            if changes:
+                db.query(ContentMention).filter(ContentMention.mention_key == key).update(changes)
                 healed += 1
             continue
         seen.add(key)

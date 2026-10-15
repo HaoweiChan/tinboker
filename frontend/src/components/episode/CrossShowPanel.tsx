@@ -88,6 +88,8 @@ export const CrossShowPanel: React.FC<Props> = ({ episode, data, sectorPerf, sec
                     {!isMember ? <span className="text-xs text-muted-foreground whitespace-nowrap">會員限定</span>
                       : !row ? <span className="text-xs text-muted-foreground">{detailFailed ? '暫時無法載入' : detail ? '—' : '載入中…'}</span>
                         : row.others.shows === 0 ? <span className="text-xs text-muted-foreground">無其他節目提及</span>
+                          // Themes carry no stance anywhere, so a lean would always read 未有明確傾向.
+                          : !isTicker ? <span className="text-xs text-muted-foreground whitespace-nowrap">{row.others.shows} 個節目也談到</span>
                           : <>
                             <span className={`font-semibold whitespace-nowrap ${tone(lean)}`}>{lean ? stanceZh(lean) : '未有明確傾向'}</span>
                             {isOpposite(row) && <span className="ml-1 text-2xs text-primary">相反</span>}
