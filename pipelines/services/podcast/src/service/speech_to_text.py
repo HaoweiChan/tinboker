@@ -713,25 +713,37 @@ def convert_verbose_json_to_srt(verbose_json: dict) -> str:
     return '\n'.join(srt_lines)
 
 
+# ponytail: fixed homophones for names Whisper reliably mishears, applied to every
+# transcript. Only for strings that are never a real word in our shows — the LLM
+# name_normalizer handles everything context-dependent. Add a row when one recurs.
+ASR_FIXES: dict[str, str] = {
+    "漫報": "曼報",  # the show's own name; one 曼報 transcript had 漫報 38 times, 曼報 never
+}
+
+
+def _apply_asr_fixes(text: str) -> str:
+    for wrong, right in ASR_FIXES.items():
+        text = text.replace(wrong, right)
+    return text
+
+
 def convert_to_traditional_chinese(text: str) -> str:
     """
-    Convert simplified Chinese to traditional Chinese.
-    
+    Convert simplified Chinese to traditional Chinese, then apply :data:`ASR_FIXES`.
+
     Args:
         text: Text that may contain simplified Chinese characters
-        
+
     Returns:
         Text with all Chinese characters converted to traditional Chinese
     """
-    if not ZHCONV_AVAILABLE:
-        return text  # Return as-is if zhconv is not available
-    
-    try:
-        # Convert simplified Chinese (zh-cn) to traditional Chinese (zh-tw)
-        return zhconv.convert(text, 'zh-tw')
-    except Exception:
-        # Return original text on error
-        return text
+    if ZHCONV_AVAILABLE:
+        try:
+            # Convert simplified Chinese (zh-cn) to traditional Chinese (zh-tw)
+            text = zhconv.convert(text, 'zh-tw')
+        except Exception:
+            pass  # keep the original text on error
+    return _apply_asr_fixes(text)
 
 
 def convert_json_to_traditional_chinese(data: Union[dict, str]) -> Union[dict, str]:
