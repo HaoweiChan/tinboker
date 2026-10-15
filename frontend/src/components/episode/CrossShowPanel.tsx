@@ -85,7 +85,7 @@ export const CrossShowPanel: React.FC<Props> = ({ episode, data, sectorPerf, sec
           <div className="flex items-center gap-2 px-2.5 pb-1 text-2xs text-muted-foreground">
             <span className="flex-1">個股</span>
             <span className="w-10 text-center">本集</span>
-            <span className="w-20 text-right">播出至今</span>
+            <span className="w-16 text-right">播出至今</span>
             <span className="w-[18px] -mr-0.5" aria-hidden />
           </div>
           <div className="flex flex-col gap-1.5">
@@ -114,11 +114,12 @@ export const CrossShowPanel: React.FC<Props> = ({ episode, data, sectorPerf, sec
                     <Link to={`/stock/${encodeURIComponent(ticker)}`} className="block text-sm font-medium hover:underline truncate leading-snug">
                       {subject.name && subject.name !== ticker ? <>{subject.name}<span className="ml-1.5 font-mono text-2xs text-muted-foreground">{ticker}</span></> : ticker}
                     </Link>
-                    <span className="block text-2xs text-muted-foreground truncate" title={row ? othersCounts(row.others) : undefined}>{others}</span>
+                    {/* Never truncate: the stance at the end of this line is the point of it. */}
+                    <span className="block text-2xs text-muted-foreground" title={row ? othersCounts(row.others) : undefined}>{others}</span>
                   </div>
                   <span className={`w-10 shrink-0 text-center text-xs font-semibold ${tone(subject.stance)}`}>{subject.stance ? stanceZh(subject.stance) : '—'}</span>
                   {/* ChangePct is a flex box, so text-right alone left it left-aligned. */}
-                  <span className="w-20 shrink-0 flex justify-end"><ChangePct value={change} sizeClass="text-xs" /></span>
+                  <span className="w-16 shrink-0 flex justify-end"><ChangePct value={change} sizeClass="text-xs" /></span>
                   <span className="w-[18px] shrink-0 -mr-0.5" aria-hidden />
                 </div>
               );

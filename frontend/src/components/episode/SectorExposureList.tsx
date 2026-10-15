@@ -52,7 +52,7 @@ const SectorExposureRow: React.FC<SectorExposureRowProps> = ({ exp, perf, loadin
           )}
           {note && <span className="block text-2xs text-muted-foreground">{note}</span>}
         </div>
-        <span className="w-20 shrink-0 flex justify-end"><ChangePct value={perf?.avg_change ?? null} sizeClass="text-xs" skeleton={loading && !perf} /></span>
+        <span className="w-16 shrink-0 flex justify-end"><ChangePct value={perf?.avg_change ?? null} sizeClass="text-xs" skeleton={loading && !perf} /></span>
         {hasTickers && (
           <button
             type="button"
