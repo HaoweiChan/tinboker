@@ -13,6 +13,8 @@ interface SectorExposureRowProps {
   perf?: SectorBoardItem;
   /** True while the board is still loading, so the change shows a skeleton not a dash. */
   loading?: boolean;
+  /** Short muted note before the change, e.g. 「3 個節目也談到」. */
+  note?: string;
 }
 
 /**
@@ -20,7 +22,7 @@ interface SectorExposureRowProps {
  * and the sector's aggregate performance. Collapsed by default; the chevron
  * expands the full list of constituent tickers so the rail stays scannable.
  */
-const SectorExposureRow: React.FC<SectorExposureRowProps> = ({ exp, perf, loading = false }) => {
+const SectorExposureRow: React.FC<SectorExposureRowProps> = ({ exp, perf, loading = false, note }) => {
   const [open, setOpen] = useState(false);
   const tickers = exp.resolved_tickers ?? [];
   const hasTickers = tickers.length > 0;
@@ -35,18 +37,22 @@ const SectorExposureRow: React.FC<SectorExposureRowProps> = ({ exp, perf, loadin
           size={13}
           variant="chip"
         />
-        {isUmbrellaSector(exp.exposure_id) ? (
-          // Umbrella sectors (半導體) have no page: label only.
-          <span className="text-sm font-medium truncate flex-1 min-w-0 leading-snug">{exp.display_name}</span>
-        ) : (
-          <Link
-            to={`/sector/${encodeURIComponent(exp.exposure_id)}`}
-            className="text-sm font-medium hover:underline truncate flex-1 min-w-0 leading-snug"
-          >
-            {exp.display_name}
-          </Link>
-        )}
-        <ChangePct value={perf?.avg_change ?? null} sizeClass="text-xs" skeleton={loading && !perf} />
+        {/* The note sits under the name: inline, it squeezed names to 「AI 先進…」 on phones. */}
+        <div className="flex-1 min-w-0">
+          {isUmbrellaSector(exp.exposure_id) ? (
+            // Umbrella sectors (半導體) have no page: label only.
+            <span className="block text-sm font-medium truncate leading-snug">{exp.display_name}</span>
+          ) : (
+            <Link
+              to={`/sector/${encodeURIComponent(exp.exposure_id)}`}
+              className="block text-sm font-medium hover:underline truncate leading-snug"
+            >
+              {exp.display_name}
+            </Link>
+          )}
+          {note && <span className="block text-2xs text-muted-foreground">{note}</span>}
+        </div>
+        <span className="w-16 shrink-0 flex justify-end"><ChangePct value={perf?.avg_change ?? null} sizeClass="text-xs" skeleton={loading && !perf} /></span>
         {hasTickers && (
           <button
             type="button"
@@ -58,6 +64,8 @@ const SectorExposureRow: React.FC<SectorExposureRowProps> = ({ exp, perf, loadin
             <ChevronDown size={14} className={cn('transition-transform duration-200', open && 'rotate-180')} />
           </button>
         )}
+        {/* Keep the chevron's width on rows without constituents so every change lines up. */}
+        {!hasTickers && <span className="w-[18px] shrink-0 -mr-0.5" aria-hidden />}
       </div>
 
       {open && hasTickers && (
@@ -84,6 +92,8 @@ interface SectorExposureListProps {
   /** exposure_id → board entry, for the per-sector performance + visuals. */
   perfMap: Map<string, SectorBoardItem>;
   loading?: boolean;
+  /** exposure_id → note shown on that row. */
+  notes?: Map<string, string>;
 }
 
 /** Collapse duplicate exposure_ids (episodes can tag the same sector more than once),
@@ -99,10 +109,10 @@ function dedupeExposures(exposures: SectorExposure[]): SectorExposure[] {
   return [...byId.values()];
 }
 
-export const SectorExposureList: React.FC<SectorExposureListProps> = ({ exposures, perfMap, loading }) => (
+export const SectorExposureList: React.FC<SectorExposureListProps> = ({ exposures, perfMap, loading, notes }) => (
   <div className="flex flex-col gap-1.5">
     {dedupeExposures(exposures).map((exp) => (
-      <SectorExposureRow key={exp.exposure_id} exp={exp} perf={perfMap.get(exp.exposure_id)} loading={loading} />
+      <SectorExposureRow key={exp.exposure_id} exp={exp} perf={perfMap.get(exp.exposure_id)} loading={loading} note={notes?.get(exp.exposure_id)} />
     ))}
   </div>
 );

@@ -246,10 +246,12 @@ async def test_development_only_shows_share_catalog_and_direct_scope(monkeypatch
     service = PodcastService.__new__(PodcastService)
     allowed = await service._allowed_podcast_names()
     for name in ("曼報", "鈔錢部署｜盧燕俐"):
-        assert (name in allowed) is visible
-        assert (await service._episode_in_scope(_ep(name, 1))) is visible
+        # 曼報 was dropped from the roster: hidden in every environment.
+        shown = visible and name != "曼報"
+        assert (name in allowed) is shown
+        assert (await service._episode_in_scope(_ep(name, 1))) is shown
     scoped = PodcastService._scope_episodes([_ep(name, 1) for name in names], allowed, None)
-    assert {ep.podcast_name for ep in scoped} == (names if visible else {"Gooaye 股癌"})
+    assert {ep.podcast_name for ep in scoped} == ({"Gooaye 股癌", "鈔錢部署｜盧燕俐"} if visible else {"Gooaye 股癌"})
     assert environment in module.cache_get.await_args.args[0]
 
 
