@@ -104,7 +104,7 @@ export const PickCard: React.FC<PickCardProps> = ({
             <span className="text-xs text-muted-foreground truncate">{podcaster}</span>
             <span className="text-xs text-muted-foreground tabular-nums shrink-0">{dateLabel}</span>
           </div>
-          <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+          <div className="flex items-center gap-2 mt-0.5">
             <button
               type="button"
               onClick={() => navigate(`/stock/${encodeURIComponent(ticker)}`)}
@@ -112,10 +112,9 @@ export const PickCard: React.FC<PickCardProps> = ({
             >
               {ticker}
             </button>
-            {/* min-w-0 + a width cap: inside a wrapping flex row `truncate` alone never
-                engages, so a long US name (SPCX) wrapped onto its own clipped line. */}
-            {displayName && <span className="text-base text-foreground truncate min-w-0 max-w-[60%]">{displayName}</span>}
-            {sentiment && <SentimentChip sentiment={sentiment} />}
+            {/* Truncate long names to keep the ticker and sentiment on one line at their natural widths. */}
+            {displayName && <span className="text-base text-foreground truncate min-w-0">{displayName}</span>}
+            {sentiment && <SentimentChip sentiment={sentiment} className="shrink-0" />}
           </div>
 
         </div>
