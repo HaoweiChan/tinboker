@@ -1,16 +1,14 @@
-"""Fixed ASR homophones are corrected in every transcript field, Simplified input included."""
+"""Per-show ASR fixes rewrite that show's mishearings and leave every other show alone."""
 
-from src.service.speech_to_text import convert_json_to_traditional_chinese
+from src.service.speech_to_text import apply_show_asr_fixes
 
 
-def test_show_name_homophone_is_fixed_in_text_and_sentences():
-    out = convert_json_to_traditional_chinese(
-        {
-            "text": "歡迎收聽漫報",
-            "sentences": [{"content": "这里是漫报的节目", "start": 0.0}],
-        }
-    )
+def test_show_name_and_host_are_fixed_for_their_own_show():
+    text = "我是燕麗 歡迎收看超前部署"
+    assert apply_show_asr_fixes("鈔錢部署｜盧燕俐", text) == "我是燕俐 歡迎收看鈔錢部署"
+    assert apply_show_asr_fixes("曼報", "歡迎收聽漫報") == "歡迎收聽曼報"
 
-    assert out["text"] == "歡迎收聽曼報"
-    assert out["sentences"][0]["content"] == "這裡是曼報的節目"
-    assert out["sentences"][0]["start"] == 0.0
+
+def test_the_same_phrase_is_untouched_on_another_show():
+    # 超前部署 is an ordinary idiom everywhere else.
+    assert apply_show_asr_fixes("Gooaye 股癌", "法人已經超前部署") == "法人已經超前部署"
