@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import type { IChartApi, ISeriesApi } from 'lightweight-charts';
+import { pointPrice } from '@/utils/chartDataUtils';
 
 
 interface UseGlobalEventLineOptions {
@@ -78,13 +79,13 @@ export function useGlobalEventLine({
         }
 
         // Extract price from the closest point (area/line data has 'value' property)
-        const price = (closestPoint as any).value || (closestPoint as any).close;
+        const price = pointPrice(closestPoint);
         const time = closestPoint.time;
 
         if (price !== undefined && price !== null && Number.isFinite(price)) {
-          chart.setCrosshairPosition(price, time as any, seriesInstance);
+          chart.setCrosshairPosition(price, time, seriesInstance);
         }
-      } catch (e) {
+      } catch {
         // Ignore all errors including disposed chart errors
         // The chart might have been disposed
       }

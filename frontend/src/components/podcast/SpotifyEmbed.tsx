@@ -20,17 +20,38 @@ export interface SpotifyEmbedRef {
   togglePlay: () => void;
 }
 
+/** The slice of Spotify's iframe API this component uses (it ships no types). */
+interface SpotifyPlaybackUpdate {
+  data: { position?: number; duration?: number; isPaused?: boolean; isBuffering?: boolean };
+}
+interface SpotifyEmbedController {
+  play?: () => void;
+  pause?: () => void;
+  togglePlay?: () => void;
+  resume?: () => void;
+  seek?: (seconds: number) => void;
+  destroy?: () => void;
+  addListener?: (event: 'playback_update', cb: (e: SpotifyPlaybackUpdate) => void) => void;
+}
+interface SpotifyIFrameAPI {
+  createController: (
+    element: HTMLElement,
+    options: { uri: string; width: string; height: string },
+    callback: (controller: SpotifyEmbedController) => void,
+  ) => void;
+}
+
 declare global {
   interface Window {
-    onSpotifyIframeApiReady?: (IFrameAPI: any) => void;
-    Spotify?: any;
+    onSpotifyIframeApiReady?: (IFrameAPI: SpotifyIFrameAPI) => void;
+    Spotify?: SpotifyIFrameAPI;
   }
 }
 
 export const SpotifyEmbed = forwardRef<SpotifyEmbedRef, SpotifyEmbedProps>(({ uri, className = '', height = 352, onPlayerReady, onPlaybackUpdate }, ref) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [isReady, setIsReady] = useState(false);
-  const embedControllerRef = useRef<any>(null);
+  const embedControllerRef = useRef<SpotifyEmbedController | null>(null);
   // From playback_update: has this episode started, and is it paused right now.
   const playStateRef = useRef({ started: false, paused: true });
   const scriptLoadedRef = useRef(false);
@@ -52,7 +73,7 @@ export const SpotifyEmbed = forwardRef<SpotifyEmbedRef, SpotifyEmbedProps>(({ ur
       } else {
         // Set up callback in case it hasn't fired
         const originalCallback = window.onSpotifyIframeApiReady;
-        window.onSpotifyIframeApiReady = (IFrameAPI: any) => {
+        window.onSpotifyIframeApiReady = (IFrameAPI: SpotifyIFrameAPI) => {
           window.Spotify = IFrameAPI;
           setIsReady(true);
           if (originalCallback) {
@@ -71,7 +92,7 @@ export const SpotifyEmbed = forwardRef<SpotifyEmbedRef, SpotifyEmbedProps>(({ ur
 
     // Set up callback BEFORE loading script (required by Spotify API)
     const originalCallback = window.onSpotifyIframeApiReady;
-    window.onSpotifyIframeApiReady = (IFrameAPI: any) => {
+    window.onSpotifyIframeApiReady = (IFrameAPI: SpotifyIFrameAPI) => {
       window.Spotify = IFrameAPI;
       setIsReady(true);
       // Call original if it existed
@@ -148,7 +169,7 @@ export const SpotifyEmbed = forwardRef<SpotifyEmbedRef, SpotifyEmbedProps>(({ ur
       height: String(height),
     };
 
-    const callback = (EmbedController: any) => {
+    const callback = (EmbedController: SpotifyEmbedController) => {
       embedControllerRef.current = EmbedController;
 
       // Auto-play when embed is ready (if supported by Spotify API and user has interacted)
@@ -167,7 +188,7 @@ export const SpotifyEmbed = forwardRef<SpotifyEmbedRef, SpotifyEmbedProps>(({ ur
 
       // Add playback_update event listener
       if (EmbedController && typeof EmbedController.addListener === 'function') {
-        EmbedController.addListener('playback_update', (e: any) => {
+        EmbedController.addListener('playback_update', (e: SpotifyPlaybackUpdate) => {
           const paused = e.data.isPaused || false;
           playStateRef.current = {
             started: playStateRef.current.started || !paused || (e.data.position || 0) > 0,

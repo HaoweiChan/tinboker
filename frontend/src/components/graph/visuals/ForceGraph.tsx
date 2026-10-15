@@ -9,9 +9,11 @@ import ReactFlow, {
   useReactFlow
 } from 'reactflow';
 import { forceSimulation, forceLink, forceManyBody, forceCenter, forceCollide } from 'd3-force';
+import type { Simulation, SimulationLinkDatum, SimulationNodeDatum } from 'd3-force';
 import { getClusterData } from '@/services/mocks';
 import { forceNodeTypes } from '../nodeTypes';
 import { DisplayMode, NodeStyle } from '@/services/types';
+import type { GraphData } from '@/services/types';
 import { BarChart2, DollarSign, PieChart, Circle, CircleDashed, RotateCcw } from 'lucide-react';
 import 'reactflow/dist/style.css';
 import { useAppStore } from '@/store/useAppStore';
@@ -19,9 +21,11 @@ import { GraphControlToggle } from '../GraphControlToggle';
 import type { CSSProperties } from 'react';
 import StockNodePopover from '../StockNodePopover';
 
+type SimNode = SimulationNodeDatum & { id: string; r: number };
+
 interface ForceGraphProps {
   isWidget?: boolean;
-  data?: any;
+  data?: GraphData;
   title?: string;
   description?: string;
 }
@@ -33,7 +37,7 @@ const ForceGraphInner: React.FC<ForceGraphProps> = ({ isWidget = false, data, ti
     const dataSource = data || getClusterData();
     
     if (dataSource && dataSource.nodes && dataSource.edges) {
-        const nodes = dataSource.nodes.map((n: any) => ({
+        const nodes = dataSource.nodes.map((n) => ({
             ...n,
             position: n.position || { x: 0, y: 0 },
             data: {
@@ -63,7 +67,7 @@ const ForceGraphInner: React.FC<ForceGraphProps> = ({ isWidget = false, data, ti
   const [nodeStyle, setNodeStyle] = useState<NodeStyle>(NodeStyle.SOLID);
 
   const { fitView } = useReactFlow();
-  const simulationRef = useRef<any>(null);
+  const simulationRef = useRef<Simulation<SimNode, SimulationLinkDatum<SimNode>> | null>(null);
 
   // Update nodes when props data changes
   useEffect(() => {
@@ -71,7 +75,7 @@ const ForceGraphInner: React.FC<ForceGraphProps> = ({ isWidget = false, data, ti
     if (dataSource && dataSource.nodes && dataSource.edges) {
         // When data updates, we might want to reset nodes to initial positions or keep them
         // For now, just replacing them triggers the simulation effect below because 'nodes' state updates
-        setNodes(dataSource.nodes.map((n: any) => ({
+        setNodes(dataSource.nodes.map((n) => ({
             ...n,
             position: n.position || { x: Math.random() * 500, y: Math.random() * 500 }, // Randomize if no pos to help force layout
             data: {
@@ -121,11 +125,11 @@ const ForceGraphInner: React.FC<ForceGraphProps> = ({ isWidget = false, data, ti
         simulationRef.current.stop();
       }
 
-      const simulation = forceSimulation(simulationNodes as any)
-        .force('link', forceLink(simulationEdges).id((d: any) => d.id).distance(displayMode === DisplayMode.PRICE ? 200 : 280))
+      const simulation = forceSimulation<SimNode>(simulationNodes)
+        .force('link', forceLink<SimNode, SimulationLinkDatum<SimNode>>(simulationEdges).id((d) => d.id).distance(displayMode === DisplayMode.PRICE ? 200 : 280))
         .force('charge', forceManyBody().strength(-1100))
         .force('center', forceCenter(400, 300))
-        .force('collide', forceCollide().radius((d: any) => d.r + 18).strength(1));
+        .force('collide', forceCollide<SimNode>().radius((d) => d.r + 18).strength(1));
 
       simulationRef.current = simulation;
 
@@ -166,7 +170,7 @@ const ForceGraphInner: React.FC<ForceGraphProps> = ({ isWidget = false, data, ti
   const resetLayout = () => {
     // For force graph, reset means re-running simulation from initial or random positions
     if (data && data.nodes) {
-         setNodes(data.nodes.map((n: any) => ({
+         setNodes(data.nodes.map((n) => ({
             ...n,
             position: { x: Math.random() * 500, y: Math.random() * 500 },
             data: { ...n.data, displayMode, nodeStyle, isDark, theme }

@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { ChevronLeft, ChevronRight, X, Maximize2 } from 'lucide-react';
 import { parseMarpFrontmatter, parseMarpSize, renderMarpToHTML, splitMarpSlides, extractMarpStyles } from '@/utils/marpParser';
+import type { TimestampedSection } from '@/utils/parseTimestampedSections';
 import { PostProcessedSlide } from '@/utils/marpPostProcessor';
 
 interface SlideViewerProps {
@@ -13,7 +14,7 @@ interface SlideViewerProps {
     episodeTitle?: string;
     episodeSource?: string;
     spotifyUri?: string;
-    timestampedSections?: any[];
+    timestampedSections?: TimestampedSection[];
 }
 
 const SlideScaler: React.FC<{ children: React.ReactNode; width: number; height: number }> = ({ children, width, height }) => {

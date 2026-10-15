@@ -40,7 +40,7 @@ const validations: Validation[] = [
   {
     name: 'Company Details',
     run: () => {
-      Object.entries(mockCompanyDetails).forEach(([ticker, details]) => {
+      Object.values(mockCompanyDetails).forEach((details) => {
         CompanyDetailSchema.parse(details);
       });
     },
@@ -48,7 +48,7 @@ const validations: Validation[] = [
   {
     name: 'Graph Data',
     run: () => {
-      Object.entries(mockGraphData).forEach(([concept, data]) => {
+      Object.values(mockGraphData).forEach((data) => {
         GraphDataSchema.parse(data);
       });
     },

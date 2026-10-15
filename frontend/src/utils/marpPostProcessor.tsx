@@ -4,6 +4,7 @@ import { StockHoverCard } from '@/components/stock/StockHoverCard';
 import { useNavigate } from 'react-router-dom';
 import { usePlayerStore } from '@/store/usePlayerStore';
 import { Play } from 'lucide-react';
+import type { TimestampedSection } from '@/utils/parseTimestampedSections';
 
 interface PostProcessedSlideProps {
   html: string;
@@ -13,7 +14,7 @@ interface PostProcessedSlideProps {
   episodeTitle?: string;
   episodeSource?: string;
   spotifyUri?: string;
-  timestampedSections?: any[];
+  timestampedSections?: TimestampedSection[];
 }
 
 /**

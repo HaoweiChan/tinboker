@@ -3,7 +3,7 @@ import type { GraphData } from '../types';
 import { GraphResponseSchema, parseResponse } from '../../validation/schemas';
 
 
-export async function getSortedGraphs(sortBy: string = 'concept_id'): Promise<any[]> {
+export async function getSortedGraphs(sortBy: string = 'concept_id'): Promise<unknown[]> {
   const response = await apiClient.get('/api/graphs', {
     params: { sort_by: sortBy },
   });

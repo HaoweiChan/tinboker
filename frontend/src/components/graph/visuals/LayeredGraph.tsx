@@ -14,7 +14,7 @@ import { layeredNodeTypes } from '../nodeTypes';
 
 interface LayeredGraphProps {
   isWidget?: boolean;
-  data?: any; // Using any to be flexible with the incoming payload structure, ideally UnifiedGraphResponse['data']
+  data?: GraphData;
   title?: string;
   description?: string;
 }
@@ -63,7 +63,7 @@ const LayeredGraphInner: React.FC<LayeredGraphProps> = ({ isWidget = false, data
       // If external data is provided, we apply the layout
       // We assume the API returns flat nodes/edges.
       // We map them to ensure they match ReactFlow structure if needed (the contract matches closely)
-      const nodes = dataSource.nodes.map((n: any) => ({
+      const nodes = dataSource.nodes.map((n) => ({
         ...n,
         // Ensure position exists if missing (layout will overwrite)
         position: n.position || { x: 0, y: 0 },
@@ -112,7 +112,7 @@ const LayeredGraphInner: React.FC<LayeredGraphProps> = ({ isWidget = false, data
     const dataSource = data || (apiFailed ? null : apiData);
     if (dataSource && dataSource.nodes && dataSource.edges) {
         const { nodes: layoutNodes, edges: layoutEdges } = getLayoutedElements(
-            dataSource.nodes.map((n: any) => ({...n, position: n.position || {x:0,y:0}})), 
+            dataSource.nodes.map((n) => ({...n, position: n.position || {x:0,y:0}})), 
             dataSource.edges, 
             'LR'
         );

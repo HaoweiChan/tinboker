@@ -173,11 +173,12 @@ export const PriceChart: React.FC<PriceChartProps> = ({ data, ticker }) => {
         return;
       }
 
+      const point = seriesData as { value?: unknown; close?: unknown };
       const price =
-        typeof (seriesData as any).value === 'number'
-          ? (seriesData as any).value
-          : typeof (seriesData as any).close === 'number'
-            ? (seriesData as any).close
+        typeof point.value === 'number'
+          ? point.value
+          : typeof point.close === 'number'
+            ? point.close
             : undefined;
 
       setLegendContent(price, param.time as number);

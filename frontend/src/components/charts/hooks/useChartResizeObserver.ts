@@ -71,7 +71,7 @@ export function useChartResizeObserver({ chart, containerRef, enabled = true }: 
           isDisposedRef.current = true;
           return;
         }
-      } catch (e) {
+      } catch {
         // Chart is disposed, mark it and cleanup immediately
         isDisposedRef.current = true;
         if (resizeObserverRef.current) {
@@ -122,7 +122,7 @@ export function useChartResizeObserver({ chart, containerRef, enabled = true }: 
             isDisposedRef.current = true;
             return;
           }
-        } catch (e) {
+        } catch {
           // Chart is disposed, mark it and cleanup
           isDisposedRef.current = true;
           if (resizeObserverRef.current) {
@@ -151,7 +151,7 @@ export function useChartResizeObserver({ chart, containerRef, enabled = true }: 
               height: rect.height,
             });
           }
-        } catch (e) {
+        } catch {
           // Mark as disposed and cleanup on any error
           // This handles cases where chart is disposed during applyOptions execution
           isDisposedRef.current = true;
