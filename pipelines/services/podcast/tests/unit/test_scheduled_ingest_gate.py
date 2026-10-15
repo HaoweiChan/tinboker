@@ -13,7 +13,7 @@ _SCRIPT = Path(__file__).resolve().parents[2] / "scripts/run_scheduled_ingest.sh
 @pytest.mark.parametrize(
     ("languages", "english_enabled"),
     [
-        (None, False),
+        (None, True),  # default matches the backend: zh-TW,en
         ("", True),
         (" ", True),
         ("[]", True),

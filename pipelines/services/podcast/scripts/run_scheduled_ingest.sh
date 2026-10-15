@@ -28,7 +28,7 @@ PY="$REPO_ROOT/.venv/bin/python"
 # release scope includes English. The backend accepts CSV or a JSON list, strips
 # whitespace, and treats an empty value/list as unrestricted. Keep the unset
 # default distinct from an explicitly empty value.
-RELEASE_LANGS="${RELEASE_PODCAST_LANGUAGES-zh-TW}"
+RELEASE_LANGS="${RELEASE_PODCAST_LANGUAGES-zh-TW,en}"
 if "$PY" -c '
 import json, sys
 value = sys.argv[1].strip()
