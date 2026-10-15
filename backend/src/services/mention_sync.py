@@ -123,8 +123,27 @@ def _existing_keys(db: Session) -> set:
     return {k for (k,) in db.query(ContentMention.mention_key).all()}
 
 
+def _delete_stale_mentions(
+    db: Session, mention_type: str, current_keys: set[str], cutoff: datetime,
+) -> int:
+    """Reconcile only the source window read by this pass; snapshots cascade.
+
+    An empty source window is a failed or misconfigured read (the mirror always holds
+    months of episodes), never "every mention went away" — so it deletes nothing.
+    """
+    if not current_keys:
+        logger.warning("mention sync: empty %s source window, skipping stale-row cleanup", mention_type)
+        return 0
+    return db.query(ContentMention).filter(
+        ContentMention.source_type == "podcast",
+        ContentMention.mention_type == mention_type,
+        ContentMention.mentioned_at >= cutoff,
+        ContentMention.mention_key.notin_(current_keys),
+    ).delete(synchronize_session=False)
+
+
 def sync_ticker_mentions(db: Session, days: int = SYNC_LOOKBACK_DAYS) -> int:
-    """Upsert ticker mentions into content_mentions. Returns rows inserted.
+    """Reconcile ticker mentions with current sources. Returns rows inserted.
 
     Existing rows whose mention_start_s no longer matches the source get it
     re-set (heals the rows written while ms were stored as seconds); after
@@ -132,6 +151,7 @@ def sync_ticker_mentions(db: Session, days: int = SYNC_LOOKBACK_DAYS) -> int:
     rows = _fetch_recent_insight_rows(days)
     stored = dict(db.query(ContentMention.mention_key, ContentMention.mention_start_s).all())
     seen = set(stored)
+    current_keys: set[str] = set()
     inserted = healed = 0
     for row in rows:
         ticker = _canonical_ticker(row.get("ticker") or "")
@@ -140,6 +160,7 @@ def sync_ticker_mentions(db: Session, days: int = SYNC_LOOKBACK_DAYS) -> int:
         if not ticker or not episode_id or mentioned_at is None:
             continue
         key = f"{episode_id}:ticker:{ticker}"
+        current_keys.add(key)
         start_s = _parse_start_s(row.get("reasons"))
         if key in seen:
             if start_s is not None and stored[key] != start_s:
@@ -165,7 +186,12 @@ def sync_ticker_mentions(db: Session, days: int = SYNC_LOOKBACK_DAYS) -> int:
             thesis=row.get("bluf_thesis"),
         ))
         inserted += 1
-    if inserted or healed:
+    # Match the midnight boundary used by the insight query, including empty results.
+    cutoff = (datetime.utcnow() - timedelta(days=days)).replace(
+        hour=0, minute=0, second=0, microsecond=0,
+    )
+    deleted = _delete_stale_mentions(db, "ticker", current_keys, cutoff)
+    if inserted or healed or deleted:
         db.commit()
     return inserted
 
@@ -238,7 +264,7 @@ def _scan_macro_claims() -> List[dict]:
 
 
 def sync_sector_mentions(db: Session, days: int = SYNC_LOOKBACK_DAYS) -> int:
-    """Upsert sector mentions into content_mentions. Returns rows inserted."""
+    """Reconcile sector mentions with current sources. Returns rows inserted."""
     try:
         records = _scan_sector_exposures()
     except Exception as e:
@@ -246,6 +272,7 @@ def sync_sector_mentions(db: Session, days: int = SYNC_LOOKBACK_DAYS) -> int:
         return 0
     cutoff = datetime.utcnow() - timedelta(days=days)
     seen = _existing_keys(db)
+    current_keys: set[str] = set()
     inserted = 0
     for rec in records:
         if rec["mentioned_at"] < cutoff:
@@ -254,6 +281,7 @@ def sync_sector_mentions(db: Session, days: int = SYNC_LOOKBACK_DAYS) -> int:
         # 2026-09-05); with autoflush off a per-row lookup missed those and the
         # whole pass died on the unique key at commit.
         key = f"{rec['episode_id']}:sector:{rec['exposure_id']}"
+        current_keys.add(key)
         if key in seen:
             continue
         seen.add(key)
@@ -272,7 +300,8 @@ def sync_sector_mentions(db: Session, days: int = SYNC_LOOKBACK_DAYS) -> int:
             payload={"members": rec.get("members") or [], "mention_text": rec.get("mention_text")},
         ))
         inserted += 1
-    if inserted:
+    deleted = _delete_stale_mentions(db, "sector", current_keys, cutoff)
+    if inserted or deleted:
         db.commit()
     return inserted
 

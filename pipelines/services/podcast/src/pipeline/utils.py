@@ -6,6 +6,7 @@ Helper functions used across pipeline steps.
 
 import os
 import re
+import unicodedata
 from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional
 
@@ -123,6 +124,65 @@ def _canonical_tag_from_value(value) -> str | None:
     return canonical_tag_slug(str(value)) if value is not None else None
 
 
+_TICKER_LINK = re.compile(r"\[([^\]\n]+)\]\(#ticker:([a-zA-Z0-9.]+)\)", re.IGNORECASE)
+
+
+def unlink_mismatched_tickers(markdown_text: str) -> str:
+    """Keep a company's name as plain text when its linked listing contradicts it."""
+    from shared.tickers import lookup_ticker, prime_tickers
+
+    links = list(_TICKER_LINK.finditer(markdown_text))
+    if not links:
+        return markdown_text
+    prime_tickers(match[2] for match in links)
+
+    def normalize(name: str) -> str:
+        name = re.sub(r"\s+", "", unicodedata.normalize("NFKC", name)).casefold().replace("臺", "台")
+        return re.sub(r"(?:\*|-ky|-dr)+$", "", name)
+
+    def replace(match: re.Match[str]) -> str:
+        label, code = match[1], match[2]
+        info = lookup_ticker(code)
+        if info is None:
+            return match[0]
+        code = info.symbol
+        name = normalize(label)
+        if name in {normalize(n) for n in (info.name, info.name_en, *info.aliases)}:
+            return match[0]
+        # Reuse theme_views._clean_tickers' conservative name comparison without
+        # importing the platform router (a separate deployment and dependency set).
+        if re.fullmatch(r"[A-Za-z]+(?:\.[A-Za-z]+)?", code) or (
+            info.market == "TW" and not re.search(r"[\u3400-\u9fff]", name)
+        ):
+            latin = "".join(re.findall(r"[a-z0-9]+", name))
+            officials = [
+                latin_name for registered in (info.name, info.name_en, *info.aliases)
+                if (latin_name := "".join(re.findall(r"[a-z0-9]+", normalize(registered))))
+                and normalize(registered) != info.symbol.casefold()
+            ]
+            def squeeze(text: str) -> str:
+                return re.sub(r"([a-z])\1+", r"\1", text)
+            matches = (
+                not officials or len(latin) <= 4 or name == code.casefold()
+                or bool(re.search(r"[\u3400-\u9fff]", name))
+                or any(latin in o or o in latin or squeeze(latin) in squeeze(o) or latin[:5] == o[:5] for o in officials)
+            )
+        elif info.market == "TW" and re.fullmatch(r"[0-9]{3,6}[A-Z]?", code):
+            official = normalize(info.name)
+            if official == info.symbol.casefold():
+                return match[0]
+            shared = len(set(name) & set(official))
+            matches = name == code.casefold() or (
+                min(len(name), len(official)) >= 2
+                and shared >= (min(len(name), len(official)) + 1) // 2
+            )
+        else:
+            return match[0]
+        return match[0] if matches else label
+
+    return _TICKER_LINK.sub(replace, markdown_text)
+
+
 def extract_tickers_from_markdown(markdown_text: str) -> List[str]:
     """
     Extract tickers from markdown text by parsing #ticker:SYMBOL patterns.
@@ -138,7 +198,7 @@ def extract_tickers_from_markdown(markdown_text: str) -> List[str]:
     
     # Pattern to match [Display](#ticker:SYMBOL) or just #ticker:SYMBOL
     pattern = r'#ticker:([a-zA-Z0-9]+)'
-    matches = re.findall(pattern, markdown_text, re.IGNORECASE)
+    matches = re.findall(pattern, unlink_mismatched_tickers(markdown_text), re.IGNORECASE)
 
     # Drop symbols that aren't real listings (the LLM tags private companies with
     # #ticker: too, e.g. OPENAI, ANTHR). valid_tickers canonicalizes + de-duplicates;
@@ -186,7 +246,7 @@ def extract_tags_and_tickers(summary_result: Dict) -> Dict[str, List[str]]:
             tickers_set = set(t.upper() for t in tickers)
             valid_structured_tickers = [t for t in structured_tickers if t in tickers_set]
             tickers = sorted(list(set(tickers + valid_structured_tickers)))
-        elif structured_tickers:
+        elif structured_tickers and not _TICKER_LINK.search(summary_text):
             # Apply the same valid_tickers() guard used by the markdown path so that
             # junk strings (country names, index codes, private companies) emitted by
             # the LLM in the structured related_tickers list are rejected here too.
