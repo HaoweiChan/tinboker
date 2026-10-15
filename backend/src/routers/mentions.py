@@ -185,6 +185,8 @@ async def get_episode_mentions(episode_id: str):
 # thing only this site can add is the other shows — who else was talking about the same
 # names in the same weeks, and whether they leaned the same way.
 CROSS_SHOW_WINDOW_DAYS = 30
+# Stock comparisons a non-member sees on the public route; the rest are member-only.
+FREE_PREVIEW_ROWS = 2
 # A lean needs this share of the other shows' mentions; below it they "disagree".
 _LEAN_SHARE = 0.6
 
@@ -233,14 +235,17 @@ def cross_show_relation(mine: Optional[str], bull: int, neutral: int, bear: int)
 @router.get("/episodes/{episode_id}/cross-show")
 @cdn_cache_trending
 async def get_episode_cross_show_teaser(episode_id: str):
-    """Public episode subjects and aggregate cross-show comparison counts.
+    """Public episode subjects, aggregate counts, and a FREE_PREVIEW_ROWS taste.
 
-    Other shows' per-subject opinions belong only to the member route below. This is
-    also what the crawler body prints, so it must never carry comparison rows.
+    Non-members see the other-shows comparison for the most-discussed stocks (rows
+    are already sorted that way) so the member table has something to point at;
+    every other comparison stays on the member route below. The crawler body prints
+    subjects and the lead only, never these rows.
     """
     full = await _cross_show(episode_id)
     compared = [r for r in full["rows"] if r["others"]["shows"] > 0]
-    return {**full, "rows": [], "compared": len(compared),
+    preview = [r for r in compared if r["mention_type"] == "ticker"][:FREE_PREVIEW_ROWS]
+    return {**full, "rows": preview, "compared": len(compared),
             "opposite": sum(r["relation"] == "opposite" for r in compared)}
 
 
