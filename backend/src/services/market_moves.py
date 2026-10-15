@@ -429,13 +429,6 @@ async def find_cause(market: Market, subject: Subject, now: datetime) -> dict:
             "sources": sources if tier != "none" else []}
 
 
-def sources_reply(sources: list[dict]) -> str:
-    lines = ["消息來源："]
-    for s in sources[:2]:
-        lines.append(f"・{s['publisher'] or '新聞'}：{s['title']}\n{s['url']}")
-    return "\n".join(lines)
-
-
 # ── themes from the registry ────────────────────────────────────────────────
 
 def _tw_suffixes(tickers: list[str]) -> dict[str, str]:
@@ -545,8 +538,7 @@ async def _draft(market: Market, lane: str, key: str, subject_id: str, move, tex
     if cause["tier"] == "none" and not force:
         return {**base, "draft": None, "skipped": "no_cause", "key": key, "cause": cause}
     draft = {"key": key, "lane": lane, "subject": subject_id, "text": text_fn(cause["clause"]),
-             "image_url": image_fn(cause["clause"]), "reply": sources_reply(cause["sources"]) if cause["sources"] else None,
-             "cause": cause}
+             "image_url": image_fn(cause["clause"]), "cause": cause}
     return {**base, "draft": draft}
 
 
@@ -613,17 +605,12 @@ async def _publish(draft: dict) -> dict:
     if not social_ledger.claim(PLATFORM, draft["key"]):
         return {"posted": False, "reason": "already_posted"}
     try:
+        # The post stands alone: the owner chose no sources reply (2026-10-15).
         media_id = await service.publish(draft["text"], image_url=draft["image_url"])
-        reply_ids = []
-        if draft.get("reply"):
-            try:
-                reply_ids.append(await service.publish_reply(draft["reply"], reply_to_id=media_id))
-            except ThreadsError:
-                logger.exception("market move: sources reply failed for %s", draft["key"])
     except ThreadsError as e:
         social_ledger.release(PLATFORM, draft["key"])
         return {"posted": False, "reason": f"publish_failed: {e}"}
-    social_ledger.record(PLATFORM, draft["key"], media_id, "", reply_ids, fmt=FORMAT, subject=draft["subject"])
+    social_ledger.record(PLATFORM, draft["key"], media_id, "", [], fmt=FORMAT, subject=draft["subject"])
     return {"posted": True, "media_id": media_id}
 
 

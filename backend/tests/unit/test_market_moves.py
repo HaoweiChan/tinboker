@@ -279,7 +279,7 @@ def _wire(monkeypatch, days, sigmas=None):
 
 
 @pytest.mark.asyncio
-async def test_a_big_morning_posts_once_with_the_pinned_card_and_the_sources(temp_db, monkeypatch):
+async def test_a_big_morning_posts_once_with_the_pinned_card_and_no_sources_reply(temp_db, monkeypatch):
     twii = _day([97.5] * 30 + [97.0])
     fake = _wire(monkeypatch, {"^TWII": twii, "^TWOII": _day([98.0] * 31, symbol="^TWOII")})
     now = datetime.fromtimestamp(OPEN + 1830, timezone.utc)
@@ -289,7 +289,7 @@ async def test_a_big_morning_posts_once_with_the_pinned_card_and_the_sources(tem
     assert text == "台股加權指數盤中重挫3%，市場推測與美債殖利率走升有關。"
     assert image == (f"https://api.tinboker.com/api/og/market/TWII.png?until={twii.last_ts}"
                      f"&reason={urllib.parse.quote_plus('市場推測與美債殖利率走升有關')}")
-    assert fake.replies[0][0].startswith("消息來源：\n・Reuters：Yields jump") and fake.replies[0][1] == "m1"
+    assert fake.replies == []                                       # no sources reply
     row = social_ledger.list_posted("threads")[0]
     assert (row["episode_id"], row["format"], row["subject"]) == \
         ("market_move:intraday:TW:2026-10-14", "market_move_intraday", "TWII")
