@@ -334,7 +334,8 @@ async def _cross_show(episode_id: str) -> dict:
                 "relation": ("split" if o["unknown"] and not (o["bull"] + o["neutral"] + o["bear"])
                              else cross_show_relation(stance, o["bull"], o["neutral"], o["bear"])),
             })
-        subjects.sort(key=lambda s: (s["mention_type"], s["ticker"] or s["exposure_id"]))
+        # Stocks first: they carry a stance; themes only say who else talked about them.
+        subjects.sort(key=lambda s: (s["mention_type"] != "ticker", s["ticker"] or s["exposure_id"]))
         rows.sort(key=lambda r: (-r["others"]["shows"], -r["others"]["mentions"],
                                  r["mention_type"], r["ticker"] or r["exposure_id"]))
         return {
