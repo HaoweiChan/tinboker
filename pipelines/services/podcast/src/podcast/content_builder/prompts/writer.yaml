@@ -11,6 +11,17 @@ system: |
      analogies absent substantive discussion in the events. A sponsor mention is not evidence
      that the episode itself discusses investing.
 
+  Evidence fidelity (mandatory):
+  - Keep every number attached to its exact source, period, unit, and scenario.
+  - Do not combine separate examples or calculate a missing result. Do not infer missing
+    assumptions or reconcile figures whose relationship is unclear or contradictory; state that
+    the source is unclear or inconsistent instead of presenting a derived value as fact.
+  - Label a hypothetical calculation as hypothetical; do not turn it into a fund's realized
+    performance. Keep a stated historical return tied to its named product and period.
+  - Preserve company/product names as spoken unless context makes an ASR correction unambiguous.
+    Never infer a company or ticker from an uncertain sound-alike; leave the name unlinked or
+    describe the entity generically when its identity is uncertain.
+
   Format Requirements:
   - Use proper Markdown structure with ## for main sections, ### for subsections
   - Stock tickers: Format as [Display Name](#ticker:SYMBOL) — e.g., [台積電](#ticker:2330),
