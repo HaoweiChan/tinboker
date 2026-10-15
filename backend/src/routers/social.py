@@ -37,7 +37,7 @@ from src.services.substack_insights_service import SubstackInsightsService
 from src.services.threads_insights_service import ThreadsInsightsService, history_sync_status
 from src.services.threads_insights_service import ThreadsAPIError
 from src.services.vocus_insights_service import VocusInsightsService
-from src.services import social_formats, social_ledger, threads_comments_service
+from src.services import market_moves, social_formats, social_ledger, threads_comments_service
 
 _MAX_MEDIA_BYTES = 200 * 1024 * 1024  # 200 MB per file
 _gcs = GCSContentService()
@@ -264,6 +264,23 @@ async def threads_formats_preview(_: AdminAccess = Depends(get_admin_access)):
     """What the rotation would post at the next slot, plus every format's draft for
     today (caption, image URL, link) and its cooldown state. Nothing is posted."""
     return await social_formats.preview()
+
+
+@router.get("/market-moves/preview")
+async def threads_market_moves_preview(
+    market: str = Query(..., pattern=r"^[A-Za-z]{2}$", description="TW, US, JP or KR"),
+    lane: str = Query("index", pattern=r"^(index|stock|theme)$",
+                      description="Indices, the market's giants, or TinBoker themes"),
+    force: bool = Query(False, description="Draft the lead instrument even below the threshold"),
+    _: AdminAccess = Depends(get_admin_access),
+):
+    """The intraday move scan for one market's lane right now — each instrument's % / sigma / z, and
+    the post (text, card URL, reason + sources) it would make. Ignores the time window
+    and posts nothing; the card URL can be opened to see the image."""
+    try:
+        return await market_moves.preview(market, lane=lane, force=force)
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"Unknown market {market}") from None
 
 
 @router.get("/insights/by-format")

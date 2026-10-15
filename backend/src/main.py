@@ -366,6 +366,17 @@ async def lifespan(app: FastAPI):
 
     asyncio.create_task(_scheduled_posts_bg())
 
+    # Intraday market-move flash posts. Its own task so a slow tick never delays the
+    # posting slots; idle unless MARKET_MOVE_MARKETS is set (production only).
+    async def _market_moves_bg():
+        try:
+            from src.services.market_moves import run_periodic
+            await run_periodic(interval_seconds=60.0)
+        except Exception as e:
+            print(f"Warning: market moves worker stopped: {e}")
+
+    asyncio.create_task(_market_moves_bg())
+
     # 每日一集 to vocus, once a night, only where DAILY_PICK_AUTOPUBLISH is set (staging).
     async def _daily_pick_bg():
         try:

@@ -23,7 +23,9 @@ from src.database.models import ContentMention, StockTranslation, TagRegistry
 from src.database.postgres import get_session
 from src.services.attention import scope_mentions
 from src.services.gcs_content import GCSContentService, media_path
-from src.services import macro_data
+from src.services import macro_data, market_moves, yahoo_chart
+from src.services.intraday_card import intraday_card_svg, theme_card_svg
+from src.services.yahoo_chart import YahooChartError
 from src.services.macro_card import macro_card_svg
 from src.services.og_image import episode_cover_png, episode_cover_svg, svg_to_png
 from src.services.podcast import PodcastService
@@ -447,6 +449,66 @@ async def macro_card_raster(
     if download:
         headers["Content-Disposition"] = f'attachment; filename="tinboker-{series_id}.png"'
     return Response(content=png, media_type="image/png", headers=headers)
+
+
+@router.get("/market/{instrument_id}.png")
+async def market_card_raster(
+    instrument_id: str = Path(..., pattern=r"^[A-Z0-9_]{2,12}$",
+                              description="Yahoo symbol without the caret, '.' as '_' (TWII, 2330_TW, NVDA)"),
+    until: Optional[int] = Query(None, ge=0, description="Cut the day at this epoch second"),
+    reason: str = Query("", max_length=80, description="The post's one-line why, under the change"),
+) -> Response:
+    """One index's or giant's intraday line as a square PNG — the first image of a
+    market-move post. ``until`` pins the card to the minute the post was written; Meta
+    fetches the image later and must not see a different day than the caption describes."""
+    hit = market_moves.BY_ID.get(instrument_id)
+    if not hit:
+        raise HTTPException(status_code=404, detail=f"Unknown instrument {instrument_id}")
+    market, inst = hit
+    try:
+        day = (await yahoo_chart.intraday(inst.symbol)).until(until)
+    except YahooChartError as e:
+        raise HTTPException(status_code=503, detail=str(e)) from e
+    # An index is compared with the market's other indices; a stock with the main index.
+    others = [i for i in market.indices if i != inst] if inst.is_index else list(market.indices[:1])
+    peers = []
+    for other in others:
+        try:
+            peers.append((other.name, (await yahoo_chart.intraday(other.symbol)).until(until).pct))
+        except YahooChartError:
+            continue  # a missing peer is a shorter row, not a failed card
+    try:
+        svg = intraday_card_svg(inst.name, inst.code, day, peers,
+                                peers_label="同市場" if inst.is_index else "大盤", reason=reason)
+        png = await asyncio.to_thread(svg_to_png, svg, CARD_SIZE, CARD_SIZE)
+    except ValueError as e:
+        raise HTTPException(status_code=503, detail=str(e)) from e
+    except Exception as e:  # noqa: BLE001 — surfaced, never swapped for the SVG
+        logger.exception("og: market card rasterisation failed for %s", instrument_id)
+        raise HTTPException(status_code=500, detail=f"card rasterisation failed: {e}") from e
+    # Pinned cards are immutable; the live one changes every minute.
+    cache = "public, max-age=86400" if until else "public, max-age=60"
+    return Response(content=png, media_type="image/png", headers={"Cache-Control": cache})
+
+
+@router.get("/market-theme/{payload}.png")
+async def market_theme_card_raster(
+    payload: str = Path(..., pattern=r"^[A-Za-z0-9_\-]{8,2000}$"),
+) -> Response:
+    """A theme's intraday move as member bars. The content is in the path (see
+    market_moves.encode_theme_card): a basket has nothing to re-fetch that would still
+    match the minute the post was written."""
+    try:
+        d = market_moves.decode_theme_card(payload)
+        svg = theme_card_svg(d["name"], d["rows"], d["median"], d["ts"], d["tz"], reason=d["reason"])
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    try:
+        png = await asyncio.to_thread(svg_to_png, svg, CARD_SIZE, CARD_SIZE)
+    except Exception as e:  # noqa: BLE001 — surfaced, never swapped for the SVG
+        logger.exception("og: theme move card rasterisation failed")
+        raise HTTPException(status_code=500, detail=f"card rasterisation failed: {e}") from e
+    return Response(content=png, media_type="image/png", headers={"Cache-Control": _CACHE_CONTROL})
 
 
 @router.get("/title/{payload}.png")
