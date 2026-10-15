@@ -639,7 +639,7 @@ def test_tw_venue_comes_from_the_warmed_bars(temp_db):
         {"3324": ".TWO", "3017": ".TW", "6488": ".TWO", "9999": ".TW"}
 
 
-def test_baskets_come_from_registry_themes_split_by_market(monkeypatch):
+def test_baskets_come_from_registry_themes_split_by_market(basket_db, monkeypatch):
     from src.services.podcast import PodcastService
     idx = {"meta": {"theme_ai": {"display_name": "AI伺服器", "exposure_type": "theme"},
                     "ind_semi": {"display_name": "半導體", "exposure_type": "industry"}},
@@ -945,3 +945,122 @@ async def test_the_model_sees_the_lede_when_the_headline_only_says_how_far(monke
         {"title": "Stocks slide", "publisher": "Reuters", "url": "v", "published": 1}])
     assert "[0] 中央社：台股重挫逾1400點｜受美股科技股重挫拖累" in sent["user"]
     assert "[1] Reuters：Stocks slide\n" in sent["user"] + "\n"          # no summary, no separator
+
+
+@pytest.fixture
+def basket_db(temp_db):
+    from src.database import postgres as pg
+    from src.database.models import StockTranslation
+
+    StockTranslation.__table__.create(bind=pg.engine, checkfirst=True)
+    return pg.engine
+
+
+def test_us_baskets_load_without_registry_and_use_approved_names(basket_db, monkeypatch):
+    from sqlalchemy import event
+    from src.database.models import StockTranslation
+    from src.database.postgres import get_session
+    from src.services.podcast import PodcastService
+
+    monkeypatch.setattr(PodcastService, "_sector_membership_index", staticmethod(lambda: {}))
+    monkeypatch.setattr(mm, "US_THEMES", [
+        {"exposure_id": "theme_us_test", "name": "測試", "members": ["NVDA", "MSFT", "META", "XYZ", "EMPTY", "HOLLOW"]}])
+    for db in get_session():
+        db.add_all([
+            StockTranslation(ticker="NVDA", market="US", name_en="Nvidia", name_zh_tw="輝達",
+                             translation_status="approved"),
+            StockTranslation(ticker="MSFT", market="US", name_en="Microsoft", name_zh_tw="待審名稱",
+                             translation_status="pending"),
+            StockTranslation(ticker="META", market="US", name_en="Meta", name_zh_tw="自動名稱",
+                             translation_status="auto"),
+            StockTranslation(ticker="XYZ", market="TW", name_zh_tw="錯誤市場", translation_status="approved"),
+            StockTranslation(ticker="EMPTY", market="US", name_en=" ", name_zh_tw=" ",
+                             translation_status="approved"),
+            StockTranslation(ticker="HOLLOW", market="US", name_en="English fallback", name_zh_tw=" ",
+                             translation_status="approved"),
+        ])
+        db.commit()
+    queries = []
+
+    def record(_conn, _cursor, statement, _parameters, _context, _executemany):
+        if statement.lstrip().upper().startswith("SELECT") and "stock_translations" in statement:
+            queries.append(statement)
+
+    event.listen(basket_db, "before_cursor_execute", record)
+    try:
+        out = mm._load_baskets()
+    finally:
+        event.remove(basket_db, "before_cursor_execute", record)
+    assert out["TW"] == []
+    assert [m.name for m in out["US"][0].members] == ["輝達", "Microsoft", "Meta", "XYZ", "EMPTY", "English fallback"]
+    assert len(queries) == 1
+
+
+def test_registry_basket_wins_static_id_collision(basket_db, monkeypatch):
+    from src.services.podcast import PodcastService
+
+    monkeypatch.setattr(mm, "US_THEMES", [
+        {"exposure_id": "theme_us_test", "name": "靜態", "members": ["AAA", "BBB", "CCC"]}])
+    monkeypatch.setattr(PodcastService, "_sector_membership_index", staticmethod(lambda: {
+        "meta": {"theme_us_test": {"display_name": "人工維護", "exposure_type": "theme"}},
+        "members": {"theme_us_test": [{"ticker": t} for t in ("NVDA", "AMD", "INTC")]},
+    }))
+    out = mm._load_baskets()
+    assert len(out["US"]) == 1
+    assert out["US"][0].name == "人工維護"
+    assert [m.symbol for m in out["US"][0].members] == ["NVDA", "AMD", "INTC"]
+
+
+@pytest.mark.asyncio
+async def test_static_us_theme_builds_a_draft_without_registry(basket_db, monkeypatch):
+    from src.services.podcast import PodcastService
+
+    now = datetime(2026, 10, 14, 14, 5, tzinfo=timezone.utc)
+    monkeypatch.setattr(PodcastService, "_sector_membership_index", staticmethod(lambda: {}))
+    monkeypatch.setattr(mm, "_baskets_cache", {})
+    theme = mm.US_THEMES[0]
+
+    async def quotes(symbols):
+        return {s: Quote(s, 100, 105, int(now.timestamp())) for s in theme["members"] if s in symbols}
+
+    async def cause(*_args):
+        return {"tier": "reported", "clause": "市場推測與需求升溫有關", "cause": "需求升溫", "sources": []}
+
+    monkeypatch.setattr(mm.yahoo_chart, "quotes", quotes)
+    monkeypatch.setattr(mm, "find_cause", cause)
+    draft = await mm.build_theme_draft(mm.MARKETS["US"], now.date(), now)
+    assert draft["draft"]["subject"] == theme["exposure_id"]
+    assert theme["name"] in draft["draft"]["text"]
+    assert "/api/og/market-theme/" in draft["draft"]["image_url"]
+    assert draft["draft"]["key"] == f"market_move:theme:US:2026-10-14:{theme['exposure_id']}"
+
+
+@pytest.mark.asyncio
+async def test_thousand_symbol_scan_keeps_bounded_batches_and_deduplicates(monkeypatch):
+    import asyncio
+
+    active = peak = 0
+    batches = []
+
+    async def get_json(_url, params, retries=2):
+        nonlocal active, peak
+        assert retries == 0
+        symbols = params["symbols"].split(",")
+        batches.append(symbols)
+        active += 1
+        peak = max(peak, active)
+        await asyncio.sleep(0)
+        active -= 1
+        return {s: {"timestamp": [1], "close": [105], "chartPreviousClose": 100} for s in symbols}
+
+    async def no_cache(*_args):
+        return None
+
+    monkeypatch.setattr(yahoo_chart, "_get_json", get_json)
+    monkeypatch.setattr(yahoo_chart, "cache_get", no_cache)
+    monkeypatch.setattr(yahoo_chart, "cache_set", no_cache)
+    symbols = [f"S{i}" for i in range(1001)]
+    out = await yahoo_chart.quotes(symbols + symbols[:100])
+    assert len(out) == 1001
+    assert len(batches) == 51 and max(map(len, batches)) == 20
+    assert peak <= yahoo_chart.SPARK_CONCURRENCY
