@@ -169,7 +169,15 @@ def transcribe_episode(
             episode_data.transcript_text = str(transcript_result)
             episode_data.transcript_words = None
             episode_data.transcript_sentences = None
-    
+
+    # Fixed per-show mishearings (the show's own name, its host). Word-level timings are
+    # left alone: a two-character name is split across words and nothing reads them as text.
+    from src.service.speech_to_text import apply_show_asr_fixes
+    show = episode_data.podcast_name
+    episode_data.transcript_text = apply_show_asr_fixes(show, episode_data.transcript_text)
+    for sentence in episode_data.transcript_sentences or []:
+        sentence.content = apply_show_asr_fixes(show, sentence.content)
+
     print(f"  ✓ Transcribed ({len(episode_data.transcript_text):,} characters)")
     if episode_data.transcript_sentences:
         print(f"  ✓ Sentence-level timing available ({len(episode_data.transcript_sentences)} sentences)")

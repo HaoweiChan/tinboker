@@ -713,6 +713,28 @@ def convert_verbose_json_to_srt(verbose_json: dict) -> str:
     return '\n'.join(srt_lines)
 
 
+# ponytail: per-show homophones for the names Whisper never gets right — usually the
+# show's own name and its host. Scoped by podcast_name because the wrong spelling is often
+# a real phrase elsewhere (超前部署 is an idiom every macro show says). The LLM
+# name_normalizer handles everything context-dependent. Add a row when one recurs.
+SHOW_ASR_FIXES: dict[str, dict[str, str]] = {
+    # 26 episodes: 超前部署 50 times, 鈔錢部署 never; 燕俐 right 44 of 124 times.
+    "鈔錢部署｜盧燕俐": {
+        "超前部署": "鈔錢部署",
+        **{v: "燕俐" for v in ("燕麗", "燕妮", "燕莉", "燕尼", "彥莉", "彥麗", "彥利", "彥妮", "彥俐")},
+    },
+    # One transcript had 漫報 38 times and 曼報 never.
+    "曼報": {"漫報": "曼報"},
+}
+
+
+def apply_show_asr_fixes(podcast_name: str, text: str) -> str:
+    """Replace ``podcast_name``'s known mishearings in ``text``; other shows pass through."""
+    for wrong, right in SHOW_ASR_FIXES.get(podcast_name, {}).items():
+        text = text.replace(wrong, right)
+    return text
+
+
 def convert_to_traditional_chinese(text: str) -> str:
     """
     Convert simplified Chinese to traditional Chinese.
