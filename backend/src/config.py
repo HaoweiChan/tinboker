@@ -148,6 +148,30 @@ class Settings(BaseSettings):
     # Model used to triage a comment and draft a reply.
     social_comment_model: str = "google/gemini-2.5-flash"
 
+    # Intraday market-move flash posts (services/market_moves.py). Comma-separated market
+    # ids from market_moves.MARKETS (TW,US,JP,KR); empty (the default) = off. Same rule
+    # as the slots: set it on EXACTLY ONE environment.
+    market_move_markets: str = ""
+    # Detection opens this long after the local open and stays open this long; the
+    # first tick inside it that sees a big, holding move posts — once per market per day.
+    market_move_delay_minutes: int = 30
+    market_move_window_minutes: int = 90
+    # "Big": at least this many daily standard deviations AND at least this many percent.
+    market_move_sigma: float = 1.5
+    market_move_min_pct: float = 1.0
+    # The giants lane (台積電, 輝達, … — market_moves.MARKETS[*].stocks): a stock needs at least
+    # this many percent as well as the sigma multiple, and at most this many stocks post
+    # per market per day, most unusual first.
+    market_move_stock_min_pct: float = 3.0
+    market_move_max_stock_posts: int = 2
+    # The theme lane (tag_registry themes as baskets of their TW / US members): a theme
+    # moves when the median member does at least this many percent with most members
+    # agreeing; at most this many themes post per market per day.
+    market_move_theme_min_pct: float = 3.0
+    market_move_max_theme_posts: int = 1
+    # Extracts the one-line reason from headlines; the hedge wording is decided in code.
+    market_move_model: str = "google/gemini-2.5-flash"
+
     # ==================== 方格子 (vocus) syndication ====================
     # vocus publishes no developer API; we drive the endpoints its own editor uses.
     # VOCUS_ID_TOKEN is a vocus-signed JWT read from localStorage after signing in —

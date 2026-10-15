@@ -4,7 +4,7 @@ import { useAppStore } from '@/store/useAppStore';
 export interface AppNotification {
   id: string;
   user_id: string;
-  type: 'new_episode' | 'stock_mention' | 'topic_mention' | 'price_alert' | 'news_draft';
+  type: 'new_episode' | 'stock_mention' | 'topic_mention' | 'price_alert' | 'news_draft' | 'system_alert';
   title: string;
   body: string;
   data: {

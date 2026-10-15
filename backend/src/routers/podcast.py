@@ -308,7 +308,7 @@ async def delete_episode_summary(
 async def patch_episode(
     podcast_name: str = Path(..., description="Podcast name"),
     episode_id: str = Path(..., description="Episode ID"),
-    updates: dict = Body(..., description="Partial update: summary_content, key_insights, related_tickers, tags"),
+    updates: dict = Body(..., description="Partial update: summary_content, key_insights, related_tickers, tags; invalidate_caches=true also permits cache-only refresh"),
     _admin: AdminAccess = Depends(get_content_write_access),
 ):
     """Patch allowed episode fields directly in Firestore (admin/content-writer only)."""

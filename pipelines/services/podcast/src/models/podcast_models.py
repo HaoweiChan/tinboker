@@ -49,6 +49,7 @@ class PodcastEpisode:
     related_tickers: List[str] = field(default_factory=list)  # List of ticker symbols
     tags: List[str] = field(default_factory=list)  # Canonical tag slugs (contract §2.1: always present, may be empty)
     key_insights: List[str] = field(default_factory=list)  # 3–8 plain-text zh-TW takeaways
+    generation_metadata: Optional[Dict] = None  # Actual model/provider evidence for the last content generation
     social_cards: List[Dict] = field(default_factory=list)  # AlphaMemo-style cards (cover + per theme)
     social_thread: Optional[Dict] = None  # {post, comments} for the Threads thread
     skipped_segments: List[Dict] = field(default_factory=list)  # Dropped segments (timing+label) for player "skip" chips
@@ -182,6 +183,9 @@ class PodcastEpisode:
         if self.key_insights:
             result['key_insights'] = self.key_insights
 
+        if self.generation_metadata is not None:
+            result['generation_metadata'] = self.generation_metadata
+
         # Same merge-safe rule for the social cards (cover + per-theme).
         if self.social_cards:
             result['social_cards'] = self.social_cards
@@ -304,6 +308,7 @@ class PodcastEpisode:
             ticker_marp_markdown_public_url=data.get('ticker_marp_markdown_public_url'),
             related_tickers=data.get('related_tickers', []),
             key_insights=data.get('key_insights', []),
+            generation_metadata=data.get('generation_metadata'),
             social_cards=data.get('social_cards', []),
             social_thread=data.get('social_thread'),
             skipped_segments=data.get('skipped_segments', []),

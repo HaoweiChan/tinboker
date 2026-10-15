@@ -186,3 +186,16 @@ def test_social_enabled_for_reads_switch_and_fails_open(monkeypatch):
     monkeypatch.setattr(platform_client, "_SOCIAL_ENABLED_CACHE", None)
     monkeypatch.setattr(platform_client, "fetch_sources", lambda *a, **k: None)
     assert platform_client.social_enabled_for("財經一路發") is True
+
+
+def test_social_enabled_environment_override_can_disable_repair_run(monkeypatch):
+    monkeypatch.setenv("PODCAST_SOCIAL_ENABLED", "false")
+    monkeypatch.setattr(
+        platform_client, "fetch_sources",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("must not fetch platform config")),
+    )
+    monkeypatch.setattr(platform_client, "_SOCIAL_ENABLED_CACHE", None)
+    assert platform_client.social_enabled_for("任何節目") is False
+
+    monkeypatch.setenv("PODCAST_SOCIAL_ENABLED", "true")
+    assert platform_client.social_enabled_for("任何節目") is True

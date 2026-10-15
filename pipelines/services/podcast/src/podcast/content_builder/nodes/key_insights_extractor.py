@@ -16,7 +16,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from ..llm import invoke_json, load_prompt
+from ..llm import discard_generation_call, invoke_json, load_prompt
 from ..state import PipelineState
 
 # A good item is a single self-contained takeaway (contract: ~15–40 chars). We keep
@@ -192,14 +192,18 @@ def postprocess(result: Any, state: PipelineState) -> dict[str, Any]:
     raw = result.get("key_insights")
     if raw is None:
         raw = result.get("insights")  # tolerate the alternate key some models emit
-    return {
-        "key_insights": ensure_key_insights(
-            raw,
-            markdown=state.get("markdown_report", ""),
-            source=state.get("source", "Podcast"),
-            episode_title=state.get("episode_title", "Episode"),
-        )
-    }
+    accepted = sanitize_key_insights(raw)
+    insights = ensure_key_insights(
+        raw,
+        markdown=state.get("markdown_report", ""),
+        source=state.get("source", "Podcast"),
+        episode_title=state.get("episode_title", "Episode"),
+    )
+    # Markdown-derived padding is useful for display, but it is not the model's
+    # output and must not count toward complete generated-role provenance.
+    if not accepted or any(item not in accepted for item in insights):
+        discard_generation_call("key_insights_extractor")
+    return {"key_insights": insights}
 
 
 def extract_key_insights_from_markdown(

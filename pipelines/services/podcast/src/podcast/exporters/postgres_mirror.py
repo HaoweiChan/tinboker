@@ -107,6 +107,16 @@ def upsert_ticker_insights(cur, episode_id: str, docs: dict[str, dict[str, Any]]
     return len(docs)
 
 
+def replace_ticker_insights(cur, episode_id: str, docs: dict[str, dict[str, Any]]) -> int:
+    """Replace one episode's complete snapshot; caller owns the transaction."""
+    if not isinstance(episode_id, str) or not episode_id.strip():
+        raise ValueError("episode_id is required for insight replacement")
+    # Serialize replacements even when this episode has no existing insight rows.
+    cur.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))", (f"ticker-insights:{episode_id}",))
+    cur.execute(f'DELETE FROM "{SCHEMA}".ticker_insights WHERE episode_id = %s', (episode_id,))
+    return upsert_ticker_insights(cur, episode_id, docs)
+
+
 def upsert_trending_tickers(cur, docs: dict[str, dict[str, Any]]) -> int:
     """Upsert each ticker's trending doc. Caller runs ``DDL_TRENDING_TICKERS`` and
     owns the connection/commit."""

@@ -76,7 +76,7 @@ def list_regen_candidates(
 
 
 @mcp.tool()
-def start_regen(podcast_name: str, episode_id: str) -> dict[str, Any]:
+def start_regen(podcast_name: str, episode_id: str, allowed_providers: list[str] | None = None) -> dict[str, Any]:
     """Open a regeneration draft for one episode and return the first prompt.
 
     Loads the episode's stored transcript/sentences from Postgres and returns the
@@ -86,11 +86,13 @@ def start_regen(podcast_name: str, episode_id: str) -> dict[str, Any]:
     Args:
         podcast_name: The episode's podcast (must match the stored doc).
         episode_id: The episode document id.
+        allowed_providers: Auxiliary-call allowlist. ["local"] forbids OpenRouter
+            including decisions calls; [] forbids all auxiliary models. Omit for legacy routing.
 
     Returns episode metadata, the current (old) content for reference, the
     step_order, and `next_prompt` (the extractor system+user prompt to fulfill).
     """
-    return _run(_orch.start, podcast_name, episode_id)
+    return _run(_orch.start, podcast_name, episode_id, allowed_providers)
 
 
 @mcp.tool()
@@ -116,7 +118,7 @@ def get_role_prompt(episode_id: str, step: str) -> dict[str, Any]:
 
 
 @mcp.tool()
-def submit_role(episode_id: str, step: str, output_json: dict[str, Any]) -> dict[str, Any]:
+def submit_role(episode_id: str, step: str, output_json: dict[str, Any], generation_metadata: dict[str, Any] | None = None) -> dict[str, Any]:
     """Submit your generated JSON for a step; runs the glue and returns what's next.
 
     After you read a step's prompt and generate the result, submit it here. The
@@ -127,6 +129,9 @@ def submit_role(episode_id: str, step: str, output_json: dict[str, Any]) -> dict
     Args:
         episode_id: The episode being regenerated.
         step: The step this output is for (same identifiers as get_role_prompt).
+        generation_metadata: {source: generated|manual|reused|unknown, provider, model,
+            generated_at}. For generated output supply actual provider/model and ISO
+            timestamp with timezone. Caller-attested; auxiliary calls are server-recorded.
         output_json: Your generated JSON for that step. Follow the step's
             ``output_schema`` + ``example`` (returned by start_regen/get_role_prompt)
             for exact field names. Top-level shapes:
@@ -144,7 +149,7 @@ def submit_role(episode_id: str, step: str, output_json: dict[str, Any]) -> dict
     get_role_prompt(episode_id, next["step"]) to fetch that step's full prompt only
     when you're ready to fill it.
     """
-    return _run(_orch.submit, episode_id, step, output_json)
+    return _run(_orch.submit, episode_id, step, output_json, generation_metadata)
 
 
 @mcp.tool()
@@ -167,6 +172,7 @@ def commit_regen(
     episode_id: str,
     render_cards: bool = False,
     notify_platform: bool = True,
+    allow_missing_audio: bool = False,
 ) -> dict[str, Any]:
     """Persist regenerated content to Postgres and local media; bust platform caches.
 
@@ -189,6 +195,10 @@ def commit_regen(
             manual_invalidation commands are returned instead.
         render_cards: Reserved — PNG social-card rendering stays in the normal
             pipeline; only the slide markdown is saved here.
+        allow_missing_audio: Explicit backfill-only completion policy. When True,
+            requires all five regen roles, an existing transcript, a real regenerated
+            summary, its uploaded artifact, and render_cards=False. It records that
+            mp3_url and summary_image_url are intentionally omitted. Defaults to False.
 
     NOTE: local checkouts can preview, but commit requires the mounted VPS media
     tree at /srv/tinboker-media. It refuses any Postgres write when that tree is
@@ -200,7 +210,7 @@ def commit_regen(
     or ``manual_invalidation`` (exact copy-paste commands) if the cache bust was
     disabled/failed/unauthenticated.
     """
-    return _run(_orch.commit, episode_id, render_cards, notify_platform)
+    return _run(_orch.commit, episode_id, render_cards, notify_platform, allow_missing_audio)
 
 
 @mcp.tool()

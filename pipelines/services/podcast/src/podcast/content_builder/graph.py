@@ -155,6 +155,7 @@ def run_pipeline(
         - key_insights
         - social_cards
     """
+    from .llm import generation_context
     from .profiles import load_profile
 
     app = build_graph()
@@ -169,7 +170,9 @@ def run_pipeline(
         "show_profile": load_profile(source),
     }
 
-    result = app.invoke(initial_state)
+    generation_calls: list[dict[str, Any]] = []
+    with generation_context(None, generation_calls):
+        result = app.invoke(initial_state)
 
     related_tickers = result.get("related_tickers", [])
     ticker_insights = result.get("ticker_insights")
@@ -202,6 +205,7 @@ def run_pipeline(
         "sector_exposure_ids": result.get("sector_exposure_ids", []),
         "sector_ids": result.get("sector_ids", []),
         "unresolved_market_trend_ids": result.get("unresolved_market_trend_ids", []),
+        "generation_metadata": _generation_metadata(generation_calls),
     }
 
     # One proper-noun pass over everything the reader sees. It has to run here, after
@@ -215,6 +219,36 @@ def run_pipeline(
     ticker_names = [
         info.name for info in (lookup_ticker(str(t)) for t in related_tickers) if info
     ]
-    return normalize_names(
-        outputs, source=source, episode_title=episode_title, ticker_names=ticker_names
-    )
+    # The post-graph normalizer is an actual model role too. Keep its call in the
+    # same provenance ledger as graph nodes, then rebuild metadata after it runs.
+    with generation_context(None, generation_calls):
+        outputs = normalize_names(
+            outputs, source=source, episode_title=episode_title, ticker_names=ticker_names
+        )
+    outputs["generation_metadata"] = _generation_metadata(generation_calls)
+    return outputs
+
+
+def _generation_metadata(calls: list[dict[str, Any]]) -> dict[str, Any]:
+    """Persist execution evidence collected from successful model responses.
+
+    `model` and `provider` come from response metadata when the provider returns
+    them, otherwise they are explicitly marked as request/route evidence.
+    Prompt and completion content never leave memory; only hashes are stored.
+    """
+    role_aliases = {"key_insights_extractor": "key_insights"}
+    roles: dict[str, dict[str, Any]] = {}
+    for call in calls:
+        role = role_aliases.get(call.get("role"), call.get("role"))
+        if not isinstance(role, str) or not call.get("output_sha256"):
+            continue
+        roles[role] = {
+            "source": "generated",
+            "provider": call["provider"],
+            "provider_evidence": call.get("provider_evidence", "route"),
+            "model": call["model"],
+            "model_evidence": call.get("model_evidence", "request"),
+            "generated_at": call["generated_at"],
+            "output_sha256": call["output_sha256"],
+        }
+    return {"version": 1, "roles": roles, "calls": calls}

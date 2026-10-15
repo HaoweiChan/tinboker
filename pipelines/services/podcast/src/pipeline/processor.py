@@ -25,7 +25,12 @@ from .steps import (
     validate_episode,
 )
 from .steps.theme_views import extract_theme_views
-from .utils import determine_language, required_artifact_urls, retain_episode_audio
+from .utils import (
+    determine_language,
+    required_artifact_urls,
+    required_episode_artifact_urls,
+    retain_episode_audio,
+)
 
 
 class EpisodeProcessor:
@@ -225,6 +230,10 @@ class EpisodeProcessor:
             # stored release date authoritative for MP3 retention on reruns.
             if existing.get("released_at_ms") is not None:
                 episode_data.api_data["released_at_ms"] = existing["released_at_ms"]
+            # Carry the explicit regen completion contract into the later skip gate.
+            episode_data.api_data["artifact_completion_policy"] = existing.get("artifact_completion_policy")
+            episode_data.api_data["summary_content"] = existing.get("summary_content")
+            episode_data.api_data["generation_metadata"] = existing.get("generation_metadata")
             # Load episode ID
             episode_data.episode_id = existing.get('id')
             
@@ -405,6 +414,9 @@ class EpisodeProcessor:
             required = required_artifact_urls(
                 skip_summarize=self.config.skip_summarize,
                 store_audio=retain_episode_audio(episode_data.api_data, self.config.store_audio),
+            )
+            required = required_episode_artifact_urls(
+                {**episode_data.api_data, **(episode_data.gcs_urls or {})}, default=required
             )
             if episode_data.gcs_urls and all(
                 episode_data.gcs_urls.get(f) for f in required

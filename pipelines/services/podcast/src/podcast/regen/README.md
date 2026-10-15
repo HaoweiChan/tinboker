@@ -123,3 +123,37 @@ cd pipelines
 uv run --package tinboker-podcast --with pytest python -m pytest \
   services/podcast/tests/test_regen_orchestrator.py -q
 ```
+
+
+### Provenance and provider policy
+
+Pass `generation_metadata` to `submit_role`: `source` (`generated`, `manual`,
+`reused`, `unknown`), actual `provider` and `model`, and timezone-qualified
+`generated_at`. Generated submissions require all four fields. Legacy callers stay
+compatible and are recorded as unknown. The server hashes the rendered prompt and
+submitted JSON, persists metadata with the draft, and exposes the identical metadata
+in preview and the episode API after commit. Caller metadata is explicitly attested
+by the caller; auxiliary calls cannot be claimed by the caller.
+
+For a no-OpenRouter run, open the draft with `allowed_providers=["local"]`;
+`[]` disables auxiliary models entirely. Both chat and decisions endpoints obey
+this draft-local policy. A disallowed sector verifier aborts submission without
+saving partial state, so configure an allowed local verifier before the run.
+Resubmitting upstream output invalidates already-completed dependent steps; commit
+requires these steps again. New summaries clear stale social copy and rebuild social
+cards when the required inputs exist; resegmentation clears unsupported macro claims.
+
+
+### Deterministic source fidelity
+
+Ticker reason/risk `start_index` and `end_index` are inclusive source-sentence
+indices. When supplied, both must be valid and the server derives their times from
+the source boundaries, overriding model estimates. Partial, reversed or unavailable
+spans fail submission. Legacy evidence without either index retains its time-only
+contract. The provenance output hash describes the submitted model JSON, before
+this deterministic normalization; provider/model and generation time are unchanged.
+
+Final decks retain every authored, bulleted theme, including late qualifications.
+The shared deck no longer silently takes only the first four themes. If the complete
+cover/table/theme/focus deck exceeds the 20-card carousel limit, rendering fails
+explicitly so the authored slides can be consolidated rather than silently omitted.

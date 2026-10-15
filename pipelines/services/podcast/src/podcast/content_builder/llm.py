@@ -35,16 +35,84 @@ requirement — see ``_provider_preference``.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
 import re
 import time
+from contextlib import contextmanager
+from contextvars import ContextVar
+from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
 import yaml
+
+# Scoped to one content-builder run. Regeneration uses this to enforce provider
+# restrictions; the regular pipeline uses it to persist call provenance.
+_GENERATION_CONTEXT: ContextVar = ContextVar("generation_context", default=None)
+
+
+class ProviderNotAllowed(RuntimeError):
+    """The draft explicitly disallows this auxiliary model provider."""
+
+
+@contextmanager
+def generation_context(allowed_providers, calls):
+    token = _GENERATION_CONTEXT.set((allowed_providers, calls))
+    try:
+        yield
+    finally:
+        _GENERATION_CONTEXT.reset(token)
+
+
+def _check_provider(model: str) -> str:
+    provider = "local" if model.startswith("local:") else "openrouter"
+    context = _GENERATION_CONTEXT.get()
+    if context is not None and context[0] is not None and provider not in context[0]:
+        raise ProviderNotAllowed(f"Auxiliary provider {provider!r} is not allowed by this draft")
+    return provider
+
+
+def _record_call(
+    role: str,
+    model: str,
+    inputs: Any,
+    response_model=None,
+    response_content: Any = None,
+    response_provider: str | None = None,
+) -> None:
+    context = _GENERATION_CONTEXT.get()
+    if context is not None:
+        record = {
+            "role": role,
+            "provider": response_provider or _check_provider(model),
+            "provider_evidence": "response" if response_provider else "route",
+            "model": response_model or model.split(":", 1)[-1],
+            "model_evidence": "response" if response_model else "request",
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "input_sha256": hashlib.sha256(json.dumps(inputs, sort_keys=True, ensure_ascii=False).encode()).hexdigest(),
+        }
+        if response_content is not None:
+            content = response_content if isinstance(response_content, str) else json.dumps(
+                response_content, sort_keys=True, ensure_ascii=False, default=str
+            )
+            record["output_sha256"] = hashlib.sha256(content.encode()).hexdigest()
+        context[1].append(record)
+
+
+def discard_generation_call(role: str) -> None:
+    """Remove the latest role record when downstream validation uses fallback data."""
+    context = _GENERATION_CONTEXT.get()
+    if context is None:
+        return
+    for index in range(len(context[1]) - 1, -1, -1):
+        if context[1][index].get("role") == role:
+            del context[1][index]
+            return
+
 
 _PROMPTS_DIR = Path(__file__).parent / "prompts"
 _MAX_RETRIES = 2
@@ -277,6 +345,7 @@ def get_model(
     from langchain_openai import ChatOpenAI
 
     model = model_override or _model_name(role)
+    _check_provider(model)
     temperature = _TEMPERATURE_MAP.get(role, 0.2)
     max_tokens = _MAX_TOKENS_MAP.get(role, 4096)
 
@@ -375,8 +444,9 @@ def invoke_json(role: str, messages: list[dict], schema: dict | None = None) -> 
     ``response_format``), strips any markdown fences, and retries up to ``_MAX_RETRIES``
     times on parse failures. ``strict=False`` tolerates stray control characters.
     """
-    model_obj = get_model(role)
     model_name = _model_name(role)
+    _check_provider(model_name)
+    model_obj = get_model(role)
     json_kwargs = _json_kwargs(model_name)
     reasoning_disabled = True
     last_err: Exception | None = None
@@ -401,17 +471,31 @@ def invoke_json(role: str, messages: list[dict], schema: dict | None = None) -> 
                 response = model_obj.invoke(messages)
             else:
                 raise
+        response_metadata = getattr(response, "response_metadata", None) or {}
         raw = _sanitize_json_text(
             response.content if isinstance(response.content, str) else str(response.content)
         )
         try:
-            return json.loads(raw, strict=False)
+            parsed = json.loads(raw, strict=False)
         except json.JSONDecodeError as exc:
             last_err = exc
             if attempt < _MAX_RETRIES:
                 wait = 2 ** attempt
                 print(f"  ⚠ JSON parse failed (attempt {attempt + 1}): {exc} — retrying in {wait}s")
                 time.sleep(wait)
+        else:
+            # Only a response that parsed into the role's accepted output counts
+            # as generated provenance; malformed retries must not satisfy the
+            # completeness gate if the node later falls back.
+            _record_call(
+                role,
+                model_name,
+                messages,
+                response_metadata.get("model_name"),
+                response.content,
+                response_metadata.get("provider"),
+            )
+            return parsed
     raise ValueError(f"LLM JSON output unparseable after {_MAX_RETRIES + 1} attempts: {last_err}")
 
 
@@ -442,6 +526,7 @@ def decide(
     import requests
 
     model = model_override or _model_name(role)
+    _check_provider(model)
     if not model.startswith(_DECISIONS_PREFIX):
         raise ValueError(f"{role} is not configured for a decisions model (got {model!r})")
     retries = _MAX_RETRIES if max_retries is None else max_retries
@@ -469,9 +554,18 @@ def decide(
                 # The body carries the real reason (bad question shape, context overflow);
                 # a bare status code has sent us chasing the wrong thing before.
                 raise RuntimeError(f"decisions endpoint {resp.status_code}: {resp.text[:300]}")
-            answers = resp.json().get("answers")
+            response_body = resp.json()
+            answers = response_body.get("answers")
             if not isinstance(answers, dict):
                 raise ValueError(f"decisions reply has no answers map: {resp.text[:200]}")
+            _record_call(
+                role,
+                model,
+                {"state": state, "questions": questions},
+                response_body.get("model"),
+                response_body,
+                response_body.get("provider"),
+            )
             return answers
         except Exception as exc:  # noqa: BLE001 — retry transport + transient 5xx alike
             last_err = exc

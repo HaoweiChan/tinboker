@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import logging
 import re
+import sys
 from typing import Any, Optional
 
 from shared.platform_client import social_enabled_for
@@ -25,12 +26,8 @@ from ..state import PipelineState
 
 logger = logging.getLogger(__name__)
 
-# Threads carousels accept at most 20 items; we stay well under to keep decks tight.
+# Threads carousels accept at most 20 items; overflow must be explicit, not silent.
 MAX_CARDS = 20
-
-# Deck budget — hard cap ~8 slides: cover(1) + ticker table(≤1) + themes(≤4) +
-# focus-list(≤2). Themes are the variable bulk (LLM-decided), so they get the cap.
-MAX_THEME_CARDS = 4
 
 # Ticker-overview grid: rows per card + a single table card (most episodes fit one).
 # 8 rows is the most that clears the bottom brand watermark on the 1080² canvas.
@@ -137,8 +134,8 @@ def cards_from_marp_slides(
             "start_time_ms": start_ms,
             "image_url": None,
         })
-        if len(cards) >= MAX_CARDS:
-            break
+        if len(cards) > MAX_CARDS:
+            raise ValueError("Episode deck exceeds 20 cards; consolidate authored slides before rendering")
 
     return cards
 
@@ -171,6 +168,13 @@ def _sentiment_badge(score: Any) -> tuple[str, str]:
     return text, cls
 
 
+def _is_neutral_score(score: Any) -> bool:
+    try:
+        return score_to_label(float(score)) == "NEUTRAL"
+    except (TypeError, ValueError):
+        return False
+
+
 def _risk_factor(risks: Any) -> str:
     """Worst-case risk severity across a ticker's risks → 高/中/低 (— if none)."""
     order = {"HIGH": 3, "MEDIUM": 2, "LOW": 1}
@@ -188,11 +192,13 @@ def _ticker_name_code(ticker: str) -> tuple[str, str]:
     return ticker, ""
 
 
-def _ticker_row(insight: dict[str, Any]) -> Optional[dict[str, str]]:
+def _ticker_row(insight: dict[str, Any], display_name: Optional[str] = None) -> Optional[dict[str, str]]:
     ticker = str(insight.get("ticker", "")).strip()
     if not ticker:
         return None
     name, code = _ticker_name_code(ticker)
+    if display_name:
+        name, code = display_name, ticker if display_name != ticker else ""
     sentiment, sentiment_class = _sentiment_badge(insight.get("sentiment_score"))
     return {
         "name": name, "code": code,
@@ -201,13 +207,15 @@ def _ticker_row(insight: dict[str, Any]) -> Optional[dict[str, str]]:
     }
 
 
-def _focus_item(insight: dict[str, Any]) -> Optional[dict[str, Any]]:
+def _focus_item(insight: dict[str, Any], display_name: Optional[str] = None) -> Optional[dict[str, Any]]:
     """Build one 產業焦點 list item (name + badge + one-liner) from a ticker's top reason."""
     ticker = str(insight.get("ticker", "")).strip()
     reasons = [r for r in (insight.get("reasons") or []) if isinstance(r, dict)]
     if not ticker:
         return None
     name, code = _ticker_name_code(ticker)
+    if display_name:
+        name, code = display_name, ticker if display_name != ticker else ""
     top = reasons[0] if reasons else {}
     # The card has a fixed 3-line box and must never show "…": take the first text that
     # fits WHOLE (the reason's description, then the one-sentence thesis, then the short
@@ -243,6 +251,7 @@ def cards_from_ticker_insights(
     ticker_insights: Optional[dict[str, Any]],
     episode_title: str = "",  # noqa: ARG001 — kept for signature parity with cards_from_marp_slides
     allowed_tickers: Optional[set[str]] = None,
+    display_names: Optional[dict[str, str]] = None,
 ) -> list[dict[str, Any]]:
     """Build the structured ticker deck (overview grid + focus-analysis cards).
 
@@ -267,9 +276,15 @@ def cards_from_ticker_insights(
     if not insights:
         return []
 
-    rows = [r for r in (_ticker_row(i) for i in insights) if r]
+    names = display_names or {}
+    rows = [r for r in (_ticker_row(i, names.get(canonical_symbol(str(i.get("ticker", ""))))) for i in insights) if r]
     cards: list[dict[str, Any]] = []
     if rows:
+        all_neutral = all(
+            _is_neutral_score(insight.get("sentiment_score"))
+            for insight in insights if str(insight.get("ticker", "")).strip()
+        )
+        table_title = "本期提及公司與態度" if all_neutral else "本期精選標的與態度"
         cap = ROWS_PER_TABLE * MAX_TABLE_CARDS
         if len(rows) > cap:
             logger.warning(
@@ -279,7 +294,7 @@ def cards_from_ticker_insights(
             rows = rows[:cap]
         for start in range(0, len(rows), ROWS_PER_TABLE):
             cards.append({
-                "kind": "ticker_table", "title": "本期提及標的與態度",
+                "kind": "ticker_table", "title": table_title,
                 "rows": rows[start:start + ROWS_PER_TABLE],
                 "start_time_ms": None, "image_url": None,
             })
@@ -292,15 +307,27 @@ def cards_from_ticker_insights(
         except (TypeError, ValueError):
             return 0.0
 
-    items = [it for it in (_focus_item(i) for i in sorted(insights, key=_conviction, reverse=True)) if it]
+    items = [it for it in (_focus_item(i, names.get(canonical_symbol(str(i.get("ticker", ""))))) for i in sorted(insights, key=_conviction, reverse=True)) if it]
     items = items[: FOCUS_PER_CARD * MAX_FOCUS_CARDS]
     for start in range(0, len(items), FOCUS_PER_CARD):
         cards.append({
-            "kind": "focus_list", "title": "產業焦點",
+            "kind": "focus_list", "title": "精選產業焦點",
             "items": items[start:start + FOCUS_PER_CARD],
             "start_time_ms": None, "image_url": None,
         })
     return cards
+
+
+def authored_ticker_names(state: PipelineState) -> dict[str, str]:
+    """Episode-authored names take precedence without changing the shared registry."""
+    names: dict[str, str] = {}
+    for item in (state.get("writer_output") or {}).get("stock_tickers") or []:
+        if not isinstance(item, dict):
+            continue
+        symbol, name = item.get("symbol"), item.get("display_name")
+        if isinstance(symbol, str) and symbol.strip() and isinstance(name, str) and name.strip():
+            names.setdefault(canonical_symbol(symbol), name.strip())
+    return names
 
 
 def _deck_tickers(state: PipelineState) -> set[str]:
@@ -313,11 +340,11 @@ def _deck_tickers(state: PipelineState) -> set[str]:
 
 
 def assemble_social_cards(state: PipelineState) -> list[dict[str, Any]]:
-    """Assemble the unified deck (≤~8 slides) shared by the PNG carousel and the
+    """Assemble the unified deck shared by the PNG carousel and the
     on-page episode Marp — so the two are byte-for-byte the same card set.
 
-    Order: cover → ticker overview grid → episode theme cards (capped at
-    ``MAX_THEME_CARDS``) → aggregated 產業焦點 focus-list cards. Returns ``[]`` when
+    Order: cover → ticker overview grid → all authored episode themes →
+    aggregated 產業焦點 focus-list cards. Returns ``[]`` when
     there is nothing postable, so callers skip a blank cover.
     """
     title = state.get("episode_title") or ""
@@ -328,7 +355,7 @@ def assemble_social_cards(state: PipelineState) -> list[dict[str, Any]]:
     if len(base) == 1 and not base[0]["bullets"]:
         return []
 
-    cover, themes = base[0], base[1:MAX_THEME_CARDS + 1]
+    cover, themes = base[0], base[1:]
     # Pull the operator-curated zh-TW names for this episode's symbols before any card
     # renders one: without it a TW listing resolves to nothing and the card shows the
     # bare code ("3037") where "欣興" belongs.
@@ -336,11 +363,15 @@ def assemble_social_cards(state: PipelineState) -> list[dict[str, Any]]:
     ticker_cards = cards_from_ticker_insights(
         state.get("ticker_insights") or {}, title,
         canonical_ticker_set(state.get("related_tickers")),
+        display_names=authored_ticker_names(state),
     )
     tables = [c for c in ticker_cards if c.get("kind") == "ticker_table"]
     focus = [c for c in ticker_cards if c.get("kind") == "focus_list"]
 
-    return [cover, *tables, *themes, *focus][:MAX_CARDS]
+    cards = [cover, *tables, *themes, *focus]
+    if len(cards) > MAX_CARDS:
+        raise ValueError("Episode deck exceeds 20 cards; consolidate authored slides before rendering")
+    return cards
 
 
 def build_social_cards(state: PipelineState) -> dict[str, Any]:
@@ -350,6 +381,6 @@ def build_social_cards(state: PipelineState) -> dict[str, Any]:
     short-circuits the Marp render step downstream, which skips on empty ``social_cards``.
     """
     if not social_enabled_for(state.get("source")):
-        print(f"  ⏸ Social cards skipped: publishing is off for {state.get('source')}")
+        print(f"  ⏸ Social cards skipped: publishing is off for {state.get('source')}", file=sys.stderr)
         return {"social_cards": []}
     return {"social_cards": assemble_social_cards(state)}

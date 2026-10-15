@@ -295,6 +295,7 @@ class EpisodeTransformer:
             released_at_ms=released_at_ms,
             number_click=episode_dict.get('number_click', 0),
             num_likes=episode_dict.get('num_likes', 0),
+            generation_metadata=episode_dict.get('generation_metadata'),
             key_insights=episode_dict.get('key_insights', []) or [],
             social_cards=episode_dict.get('social_cards', []) or [],
             social_thread=episode_dict.get('social_thread') or None,

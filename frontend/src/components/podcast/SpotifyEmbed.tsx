@@ -28,6 +28,7 @@ interface SpotifyEmbedController {
   play?: () => void;
   pause?: () => void;
   togglePlay?: () => void;
+  resume?: () => void;
   seek?: (seconds: number) => void;
   destroy?: () => void;
   addListener?: (event: 'playback_update', cb: (e: SpotifyPlaybackUpdate) => void) => void;
@@ -51,6 +52,8 @@ export const SpotifyEmbed = forwardRef<SpotifyEmbedRef, SpotifyEmbedProps>(({ ur
   const containerRef = useRef<HTMLDivElement>(null);
   const [isReady, setIsReady] = useState(false);
   const embedControllerRef = useRef<SpotifyEmbedController | null>(null);
+  // From playback_update: has this episode started, and is it paused right now.
+  const playStateRef = useRef({ started: false, paused: true });
   const scriptLoadedRef = useRef(false);
 
   useEffect(() => {
@@ -112,61 +115,25 @@ export const SpotifyEmbed = forwardRef<SpotifyEmbedRef, SpotifyEmbedProps>(({ ur
   // Expose seekTo method via ref
   useImperativeHandle(ref, () => ({
     seekTo: (seconds: number) => {
-      if (embedControllerRef.current) {
-        try {
-          const controller = embedControllerRef.current;
-
-          if (typeof controller.seek !== 'function') {
-            console.warn('Seek function not available on controller');
-            return;
-          }
-
-          // Always use play-then-seek strategy for reliability
-          // The Spotify API is unreliable when seeking on an already-playing embed
-          // Calling play() first ensures the player is in a known state
-          // Start playback first (this is idempotent if already playing)
-          if (typeof controller.play === 'function') {
-            controller.play();
-          } else if (typeof controller.togglePlay === 'function') {
-            controller.togglePlay();
-          }
-
-          // Seek after a short delay to ensure playback is active
-          setTimeout(() => {
-            if (embedControllerRef.current && typeof embedControllerRef.current.seek === 'function') {
-              try {
-                embedControllerRef.current.seek(seconds);
-              } catch (seekError) {
-                console.warn('[SpotifyEmbed] First seek attempt failed, retrying:', seekError);
-                // Retry after a longer delay
-                setTimeout(() => {
-                  if (embedControllerRef.current && typeof embedControllerRef.current.seek === 'function') {
-                    try {
-                      embedControllerRef.current.seek(seconds);
-                    } catch (retryError) {
-                      console.error('[SpotifyEmbed] Retry seek failed:', retryError);
-                    }
-                  }
-                }, 500);
-              }
-            }
-          }, 150);
-        } catch (error) {
-          console.error('[SpotifyEmbed] Failed to seek:', error);
-        }
-      } else {
-        console.warn('[SpotifyEmbed] Controller not ready, deferring seek');
-        // Defer seek until controller is ready
-        setTimeout(() => {
-          if (embedControllerRef.current && typeof embedControllerRef.current.seek === 'function') {
-            try {
-              embedControllerRef.current.seek(seconds);
-            } catch (retryError) {
-              console.error('[SpotifyEmbed] Deferred seek failed:', retryError);
-            }
-          }
-        }, 300);
+      const controller = embedControllerRef.current;
+      if (!controller || typeof controller.seek !== 'function') {
+        // Controller not ready yet: try once more shortly.
+        setTimeout(() => embedControllerRef.current?.seek?.(seconds), 300);
+        return;
       }
+      // controller.play() RESTARTS the episode from 0 — measured 2026-10-15 in the
+      // embed, both while playing and while paused; resume() continues. The old
+      // play-then-seek-150ms-later raced that restart, so a skip or timestamp tap
+      // sometimes landed back near the start. Seek directly once playback has begun
+      // (seek works on a playing embed: 0:12 -> seek(30) -> 0:32), resume if paused,
+      // and only use play() for the very first start, when a restart costs nothing.
+      if (playStateRef.current.started) {
+        controller.seek(seconds);
+        if (playStateRef.current.paused) controller.resume?.();
+        return;
+      }
+      controller.play?.();
+      setTimeout(() => embedControllerRef.current?.seek?.(seconds), 150);
     },
     play: () => {
       if (embedControllerRef.current && typeof embedControllerRef.current.play === 'function') {
@@ -222,6 +189,11 @@ export const SpotifyEmbed = forwardRef<SpotifyEmbedRef, SpotifyEmbedProps>(({ ur
       // Add playback_update event listener
       if (EmbedController && typeof EmbedController.addListener === 'function') {
         EmbedController.addListener('playback_update', (e: SpotifyPlaybackUpdate) => {
+          const paused = e.data.isPaused || false;
+          playStateRef.current = {
+            started: playStateRef.current.started || !paused || (e.data.position || 0) > 0,
+            paused,
+          };
           if (onPlaybackUpdate) {
             onPlaybackUpdate({
               position: e.data.position ? Math.floor(e.data.position / 1000) : 0,

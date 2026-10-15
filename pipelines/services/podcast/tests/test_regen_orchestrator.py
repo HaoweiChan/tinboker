@@ -7,8 +7,10 @@ messages each content_builder node would send — which guards the build_message
 postprocess refactor against drift.
 """
 
+import hashlib
 import json
 import sys
+from datetime import datetime, timezone
 from types import ModuleType
 
 import psycopg
@@ -27,10 +29,12 @@ from src.podcast.regen import orchestrator as orch
 
 
 @pytest.fixture(autouse=True)
-def _isolate_work_dir(tmp_path, monkeypatch):
+def _isolate_work_dir(tmp_path, monkeypatch, request):
     """Persist drafts under a tmp dir and start every test with a clean session map."""
     monkeypatch.setenv("TINBOKER_REGEN_WORK_DIR", str(tmp_path))
     orch._SESSIONS.clear()
+    if request.node.name != "test_media_service_uses_regen_bootstrap_before_import":
+        monkeypatch.setattr(orch, "_gcs_storage_service", lambda: _FakeGCS())
     yield
     orch._SESSIONS.clear()
 
@@ -304,6 +308,66 @@ def test_step_aliases_accepted():
     assert orch.get_prompt("ep_test", "slides")["step"] == "marp_writer"
 
 
+def test_ticker_and_marp_prompts_include_taipei_publication_date_for_existing_draft(monkeypatch):
+    """Existing drafts carry release metadata at top level; role prompts must expose it."""
+    draft = _new_draft()
+    # 2026-09-01 16:30 UTC is already 2026-09-02 in Taiwan.
+    draft["podcast_launch_time"] = int(datetime(2026, 9, 1, 16, 30, tzinfo=timezone.utc).timestamp() * 1000)
+    orch.submit("ep_test", "extractor", {"events": [{"section_topic": "台積電", "start_index": 0, "end_index": 2}]})
+
+    marp_prompt = orch.get_prompt("ep_test", "marp_writer")
+    ticker_prompt = orch.get_prompt("ep_test", "ticker_extractor")
+    for prompt in (marp_prompt, ticker_prompt):
+        assert "date_iso: 2026-09-02" in prompt["user"]
+        assert "display_date: 2026.09.02" in prompt["user"]
+        assert "published_at: 2026-09-02T00:30:00+08:00" in prompt["user"]
+        assert "timezone: Asia/Taipei" in prompt["user"]
+    assert "publication_date" in ticker_prompt["user"]
+
+    # The recorded provenance hash must cover the exact augmented prompt too.
+    expected = hashlib.sha256(json.dumps(
+        [
+            {"role": "system", "content": ticker_prompt["system"]},
+            {"role": "user", "content": ticker_prompt["user"]},
+        ],
+        ensure_ascii=False,
+        sort_keys=True,
+    ).encode()).hexdigest()
+    monkeypatch.setattr(orch, "_apply", lambda *args: [])
+    orch.submit("ep_test", "ticker_extractor", {"ticker_recommendations": []})
+    recorded = orch.preview("ep_test")["generation_metadata"]["roles"]["ticker_extractor"]
+    assert recorded["prompt_sha256"] == expected
+
+
+def test_legacy_created_time_supplies_publication_date_when_launch_time_missing():
+    draft = _new_draft()
+    draft["created_time"] = "2026-09-01T20:30:00+08:00"
+    orch.submit("ep_test", "extractor", {"events": [{"section_topic": "台積電", "start_index": 0, "end_index": 2}]})
+    prompt = orch.get_prompt("ep_test", "marp_writer")
+    assert "date_iso: 2026-09-01" in prompt["user"]
+    assert "display_date: 2026.09.01" in prompt["user"]
+
+
+def test_invalid_launch_time_falls_back_to_naive_created_time_as_utc():
+    draft = _new_draft()
+    draft["podcast_launch_time"] = "invalid-launch-time"
+    draft["created_time"] = "2026-09-01T16:30:00"
+    orch.submit("ep_test", "extractor", {"events": [{"section_topic": "台積電", "start_index": 0, "end_index": 2}]})
+    prompt = orch.get_prompt("ep_test", "marp_writer")
+    assert "date_iso: 2026-09-02" in prompt["user"]
+    assert "published_at: 2026-09-02T00:30:00+08:00" in prompt["user"]
+
+
+def test_ten_billion_is_interpreted_as_epoch_milliseconds():
+    metadata = orch._publication_prompt_metadata({"podcast_launch_time": 10_000_000_000})
+    assert metadata == {
+        "date_iso": "1970-04-27",
+        "display_date": "1970.04.27",
+        "published_at": "1970-04-27T01:46:40+08:00",
+        "timezone": "Asia/Taipei",
+    }
+
+
 def test_submit_accepts_json_string():
     _new_draft()
     orch.submit("ep_test", "extractor", json.dumps({"events": [{"section_topic": "台積電", "start_index": 0, "end_index": 2}]}))
@@ -412,6 +476,10 @@ class _FakeGCS:
         if kwargs.get("marp_markdown_content"):
             out["marp_markdown_url"] = f"gs://b/marp/{eid}.md"
             out["marp_markdown_public_url"] = f"https://h/marp/{eid}.md"
+        if kwargs.get("ticker_marp_markdown_content"):
+            out["ticker_marp_markdown_url"] = f"https://h/ticker-marp/{eid}.md"
+        if kwargs.get("ticker_insights_data") is not None:
+            out["ticker_insights_url"] = f"https://h/ticker-insights/{eid}.json"
         return out
 
 
@@ -793,7 +861,7 @@ def _capture_export(monkeypatch):
         "src.podcast.exporters.ticker_insights.build_episode_insight_docs", fake_build
     )
     monkeypatch.setattr(
-        "src.podcast.exporters.ticker_insights.write_episode_insights_postgres",
+        "src.podcast.exporters.ticker_insights.replace_episode_insights_postgres",
         lambda episode_id, docs: len(docs),
     )
     return captured
@@ -826,3 +894,201 @@ def test_commit_falls_back_to_created_time_for_legacy_draft(monkeypatch):
     orch.commit("ep_test", notify_platform=False)
 
     assert captured["podcast_launch_time"] == "2025-05-09T00:00:00Z"
+
+# Triage: invariant-gap — caller provenance and an auxiliary-call policy were absent.
+def test_provenance_survives_restart(monkeypatch):
+    _new_draft()
+    monkeypatch.setattr(orch, '_apply', lambda *args: [])
+    orch.submit('ep_test', 'extractor', {'events': []}, generation_metadata={
+        'source': 'generated', 'provider': 'openai', 'model': 'gpt-6-luna',
+        'generated_at': '2026-10-14T00:00:00Z',
+    })
+    orch._SESSIONS.clear()
+    meta = orch.preview('ep_test')['generation_metadata']['roles']['extractor']
+    assert meta['model'] == 'gpt-6-luna'
+    assert meta['attestation'] == 'caller'
+    assert len(meta['prompt_sha256']) == 64
+    assert orch._doc_update(orch._assemble(orch._load('ep_test')))['generation_metadata']['roles']['extractor'] == meta
+
+
+def test_reject_auxiliary_provenance_claim():
+    _new_draft()
+    with pytest.raises(orch.RegenError, match='metadata'):
+        orch.submit('ep_test', 'extractor', {'events': []}, generation_metadata={'auxiliary_calls': [{'model': 'fake'}]})
+
+
+def test_provider_policy_blocks_decisions_before_network(monkeypatch):
+    from src.podcast.content_builder import llm
+    monkeypatch.setenv('SECTOR_VERIFIER_MODEL', 'decisions:typesafe/jev-1.13')
+    with llm.generation_context(['local'], []):
+        with pytest.raises(llm.ProviderNotAllowed):
+            llm.decide('sector_verifier', {}, {})
+
+
+def test_provider_policy_blocks_chat_before_client(monkeypatch):
+    from src.podcast.content_builder import llm
+    monkeypatch.setattr(llm, '_model_name', lambda role: 'openrouter:fake/model')
+    monkeypatch.setattr(llm, 'get_model', lambda *a: pytest.fail('client must not be created'))
+    with llm.generation_context(['local'], []):
+        with pytest.raises(llm.ProviderNotAllowed):
+            llm.invoke_json('sector_verifier', [])
+
+
+def test_denied_submission_does_not_change_draft(monkeypatch):
+    from src.podcast.content_builder.llm import ProviderNotAllowed
+    draft = _new_draft()
+    before = json.loads(json.dumps(draft))
+    def fail(step, output, state):
+        state['changed'] = True
+        raise ProviderNotAllowed('blocked')
+    monkeypatch.setattr(orch, '_apply', fail)
+    with pytest.raises(ProviderNotAllowed):
+        orch.submit('ep_test', 'extractor', {'events': []})
+    assert orch._load('ep_test') == before
+
+
+def test_commit_empty_insights_replaces_and_failure_propagates(monkeypatch):
+    draft = _new_draft()
+    draft['completed'] = ['ticker_extractor']
+    draft['state']['ticker_insights'] = {'ticker_insights': []}
+    _fake_pg(monkeypatch)
+    calls = []
+    monkeypatch.setattr('src.podcast.exporters.ticker_insights.replace_episode_insights_postgres', lambda eid, docs: calls.append((eid, docs)) or 0)
+    assert orch.commit('ep_test', notify_platform=False)['committed']
+    assert calls == [('ep_test', {})]
+    def fail(*args):
+        raise RuntimeError('database failed')
+    monkeypatch.setattr('src.podcast.exporters.ticker_insights.replace_episode_insights_postgres', fail)
+    with pytest.raises(orch.RegenError, match='replacement failed'):
+        orch.commit('ep_test', notify_platform=False)
+
+
+def test_mcp_schema_exposes_optional_provenance_and_policy():
+    import asyncio
+
+    from src.podcast.regen.mcp_server import mcp
+    tools = {tool.name: tool for tool in asyncio.run(mcp.list_tools())}
+    submit_schema = tools['submit_role'].inputSchema
+    assert 'generation_metadata' in submit_schema['properties']
+    assert 'generation_metadata' not in submit_schema['required']
+    assert 'allowed_providers' in tools['start_regen'].inputSchema['properties']
+
+
+def test_auxiliary_provenance_uses_actual_response_model(monkeypatch):
+    from types import SimpleNamespace
+
+    from src.podcast.content_builder import llm
+    monkeypatch.setattr(llm, '_model_name', lambda role: 'local:requested-alias')
+    response = SimpleNamespace(content='{}', response_metadata={'model_name': 'actual-model'})
+    monkeypatch.setattr(llm, 'get_model', lambda *a: SimpleNamespace(invoke=lambda *a, **k: response))
+    calls = []
+    with llm.generation_context(['local'], calls):
+        assert llm.invoke_json('sector_verifier', [{'role': 'user', 'content': 'test'}]) == {}
+    assert calls[0]['provider'] == 'local'
+    assert calls[0]['model'] == 'actual-model'
+    assert calls[0]['model_evidence'] == 'response'
+    assert len(calls[0]['input_sha256']) == 64
+    assert llm._GENERATION_CONTEXT.get() is None
+
+
+
+def test_resubmit_invalidates_downstream_provenance_and_blocks_commit():
+    _new_draft()
+    _drive_required()
+    orch.submit('ep_test', 'writer', WRITER_OUT)
+    draft = orch._load('ep_test')
+    assert 'key_insights' not in draft['completed']
+    assert 'key_insights' not in draft['generation_metadata']['roles']
+    with pytest.raises(orch.RegenError, match='invalidated steps'):
+        orch.commit('ep_test', notify_platform=False)
+
+
+def test_existing_provenance_does_not_allow_empty_commit():
+    draft = _new_draft()
+    draft['generation_metadata'] = {'version': 1, 'roles': {}, 'auxiliary_calls': []}
+    with pytest.raises(orch.RegenError, match='Nothing to commit'):
+        orch.commit('ep_test', notify_platform=False)
+
+
+@pytest.mark.parametrize('raises', [False, True])
+def test_commit_media_failure_prevents_episode_write(monkeypatch, raises):
+    _new_draft()
+    _drive_summary_and_marp()
+    monkeypatch.setattr(orch, '_require_live_media_root', lambda: None)
+    monkeypatch.setattr(orch, '_write_doc_update', lambda *a: pytest.fail('must not write incomplete episode'))
+    class FailedMedia:
+        def upload_episode_files(self, **kwargs):
+            if raises:
+                raise OSError('disk full')
+            return {'summary_url': None}
+    monkeypatch.setattr(orch, '_gcs_storage_service', lambda: FailedMedia())
+    with pytest.raises(orch.RegenError, match='Media write failed'):
+        orch.commit('ep_test', notify_platform=False)
+
+
+@pytest.mark.parametrize('step', ['extractor', 'ticker_extractor'])
+def test_partial_regen_notifies_cache_only(monkeypatch, step):
+    draft = _new_draft()
+    draft['completed'] = [step]
+    draft['state']['ticker_insights'] = {'ticker_insights': []}
+    _fake_pg(monkeypatch)
+    monkeypatch.setattr('src.podcast.exporters.ticker_insights.replace_episode_insights_postgres', lambda *a: 0)
+    monkeypatch.setenv('TINBOKER_PLATFORM_API_URL', 'https://dev-api.example.test')
+    monkeypatch.setenv('TINBOKER_WRITE_TOKEN', 'test')
+    calls = []
+    monkeypatch.setattr('httpx.patch', lambda *a, **kwargs: calls.append(kwargs['json']) or _Resp(200))
+    report = orch.commit('ep_test')
+    assert calls == [{'invalidate_caches': True}]
+    assert 'cache_refreshed' in report
+    report = orch.commit('ep_test', notify_platform=False)
+    assert report['cache_stale_until_ttl'] is True
+
+
+
+def test_empty_deck_clears_old_media_urls():
+    updates, error = orch._upload_regen_content('ep', 'show', {'ticker_marp_markdown': ''})
+    assert error is None
+    assert updates == {'ticker_marp_markdown_url': None, 'ticker_marp_markdown_public_url': None}
+
+
+
+def test_ticker_submission_derives_source_times_without_changing_model_provenance(monkeypatch):
+    import hashlib
+    draft = _new_draft()
+    draft['completed'] = ['extractor']
+    monkeypatch.setattr(orch, 'derive_sector_exposures', lambda state: {})
+    payload = {'ticker_insights': [{'ticker': '2330', 'reasons': [{
+        'start_index': 1, 'end_index': 2, 'start_time': 1, 'end_time': 2,
+    }]}]}
+    expected_hash = hashlib.sha256(json.dumps(payload, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
+    orch.submit('ep_test', 'ticker_extractor', payload, generation_metadata={
+        'source': 'generated', 'provider': 'openai', 'model': 'gpt-6-luna',
+        'generated_at': '2026-10-14T00:00:00Z',
+    })
+    state = orch._load('ep_test')['state']
+    evidence = state['ticker_insights']['ticker_insights'][0]['reasons'][0]
+    assert (evidence['start_time'], evidence['end_time']) == (3000, 9000)
+    assert payload['ticker_insights'][0]['reasons'][0]['start_time'] == 1
+    metadata = orch.preview('ep_test')['generation_metadata']['roles']['ticker_extractor']
+    assert metadata['output_sha256'] == expected_hash
+    assert metadata['generated_at'] == '2026-10-14T00:00:00Z'
+    assert metadata['model'] == 'gpt-6-luna'
+
+
+def test_ticker_resubmit_refreshes_existing_episode_deck(monkeypatch):
+    draft = _new_draft()
+    draft['completed'] = ['extractor', 'marp_writer']
+    draft['state']['marp_slides'] = MARP_OUT
+    draft['state']['marp_markdown'] = 'stale deck'
+    monkeypatch.setattr(orch, 'derive_sector_exposures', lambda state: {})
+    orch.submit('ep_test', 'ticker_extractor', {'ticker_insights': [{
+        'ticker': '2330', 'sentiment_score': 0.8, 'reasons': [{
+            'title': 'source', 'description': 'source detail',
+            'start_index': 1, 'end_index': 2, 'start_time': 1, 'end_time': 2,
+        }],
+    }]})
+    state = orch._load('ep_test')['state']
+    assert 'stale deck' not in state['marp_markdown']
+    assert 'source detail' in state['marp_markdown']
+    assert '[00:03]' in state['marp_markdown']
+    assert '[00:03]' in state['ticker_marp_markdown']

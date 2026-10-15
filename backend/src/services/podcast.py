@@ -471,31 +471,50 @@ class PodcastService:
             return None
         try:
             dt = datetime.fromisoformat(s.replace('Z', '+00:00'))
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
         except ValueError:
             try:
-                dt = datetime.strptime(s[:10], '%Y-%m-%d')
+                dt = datetime.strptime(s[:10], '%Y-%m-%d').replace(tzinfo=timezone.utc)
             except ValueError:
                 return None
         return int(dt.timestamp() * 1000)
 
     @staticmethod
+    def _preferred_release_ms(spotify_release_date, released_at_ms: Optional[int]) -> Optional[int]:
+        """Use precise release time for date-only Spotify values when days agree."""
+        spotify_ms = PodcastService._spotify_release_ms(spotify_release_date)
+        if spotify_ms is None:
+            return released_at_ms
+        date_only = False
+        if isinstance(spotify_release_date, str):
+            value = spotify_release_date.strip()
+            try:
+                date_only = datetime.strptime(value, "%Y-%m-%d").date().isoformat() == value
+            except ValueError:
+                pass
+        if date_only and released_at_ms is not None:
+            spotify_day = datetime.fromtimestamp(spotify_ms / 1000, tz=timezone.utc).date()
+            released_day = datetime.fromtimestamp(released_at_ms / 1000, tz=timezone.utc).date()
+            if released_day == spotify_day:
+                return released_at_ms
+        return spotify_ms
+
+    @staticmethod
     def _episode_release_ms(episode: Episode) -> int:
-        """Publish time for recency/sort: prefer the true Spotify publish date,
-        then released_at_ms, then created_time."""
-        sp = PodcastService._spotify_release_ms(getattr(episode, 'spotify_release_date', None))
-        if sp is not None:
-            return sp
-        return episode.released_at_ms if episode.released_at_ms is not None else (episode.created_time or 0)
+        """Publish time for recency/sort, retaining precision when dates agree."""
+        preferred = PodcastService._preferred_release_ms(
+            getattr(episode, 'spotify_release_date', None), episode.released_at_ms
+        )
+        return preferred if preferred is not None else (episode.created_time or 0)
 
     def _dict_release_ms(self, ep: dict) -> int:
         """Publish time (Unix ms) for a raw Firestore episode dict.
-        Prefers spotify_release_date, then released_at_ms, then created_time."""
-        sp = self._spotify_release_ms(ep.get('spotify_release_date'))
-        if sp is not None:
-            return sp
+        Uses released_at_ms when its UTC day matches Spotify, then created_time."""
         r = self.transformer._normalize_released_at_ms(ep.get('released_at_ms'))
-        if r is not None:
-            return r
+        preferred = self._preferred_release_ms(ep.get('spotify_release_date'), r)
+        if preferred is not None:
+            return preferred
         return self.transformer.datetime_to_timestamp_ms(ep.get('created_time', datetime.now()))
 
     @staticmethod
@@ -2781,11 +2800,20 @@ class PodcastService:
     ) -> Episode:
         """Patch allowed fields directly in Firestore (dev debug editor)."""
         from fastapi import HTTPException
+        updates = dict(updates)
+        invalidate_caches = updates.pop("invalidate_caches", False)
+        if type(invalidate_caches) is not bool:
+            raise HTTPException(status_code=422, detail="invalidate_caches must be boolean")
+        clear_summary_image = updates.pop("clear_summary_image", False)
+        if type(clear_summary_image) is not bool:
+            raise HTTPException(status_code=422, detail="clear_summary_image must be boolean")
         allowed = {"summary_content", "key_insights", "related_tickers", "tags"}
         bad_keys = set(updates.keys()) - allowed
         if bad_keys:
             raise HTTPException(status_code=422, detail=f"Fields not patchable: {', '.join(sorted(bad_keys))}")
-        if not updates:
+        if clear_summary_image:
+            updates.update({"summary_image": None, "summary_image_url": None, "summary_image_public_url": None})
+        if not updates and not invalidate_caches:
             raise HTTPException(status_code=422, detail="No fields to update")
         episode_dict = self.firestore_service.get_document("episodes", episode_id)
         if not episode_dict:
@@ -2793,12 +2821,13 @@ class PodcastService:
         if episode_dict.get("podcast_name") != podcast_name:
             raise HTTPException(status_code=404, detail=f"Episode {episode_id} not found for podcast {podcast_name}")
         try:
-            await self._write_episode_fields(episode_id, updates)
+            if updates:
+                await self._write_episode_fields(episode_id, updates)
             await self._invalidate_episode_cache(podcast_name, episode_id)
             # When related_tickers change (e.g. a content regen), the per-ticker
             # sentiment cards are served from a separate ticker_insights:* cache the
             # episode bust above does NOT cover — clear it too.
-            if "related_tickers" in updates:
+            if invalidate_caches or "related_tickers" in updates:
                 await self._invalidate_ticker_insight_cache(podcast_name)
             # Refresh the Cloudflare edge for this env so the patched content shows
             # immediately instead of waiting out s-maxage (≤1h). Best-effort.
@@ -2862,10 +2891,14 @@ class PodcastService:
         detail-page sentiment cards stay stale for up to INSIGHT_TTL (2h).
         Best-effort: a cache hiccup must not fail the write.
         """
+        from src.services.insight_service import _scope_tag
+
+        scope = _scope_tag()
         for pattern in (
-            "ticker_insights:by_ticker:*",
-            f"ticker_insights:by_podcaster:{podcast_name}:*",
-            "ticker_insights:trending:*",
+            f"ticker_insights:by_ticker:{scope}:*",
+            f"ticker_insights:by_podcaster:v2:{scope}:{podcast_name}:*",
+            f"ticker_insights:recent:v2:{scope}:*",
+            f"ticker_insights:trending:{scope}:*",
         ):
             try:
                 await cache_delete_pattern(pattern)

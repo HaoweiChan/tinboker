@@ -15,6 +15,42 @@
 
 **Historical material:** The rest of §§1–10 records the Firestore-era contract and rollout. It remains useful for JSON field semantics, but do not follow its Firestore write/read or Phase A/B rollout instructions for new code. Use the [shared-data workflow](workflows/firestore-data-change.md).
 
+## Episode regeneration provenance
+
+`generation_metadata` is optional episode JSONB, passed unchanged through the platform
+Episode API and its frontend type. Missing/null means historical provenance is unknown;
+never infer it from today's model configuration. Version 1 contains `roles` keyed by
+regen step and `auxiliary_calls`. A role records `source` (`generated`, `manual`,
+`reused`, `unknown`, or the server's `deterministic`), optional provider/model and
+ISO timestamp `generated_at`, SHA-256 hashes of rendered prompt and submitted output,
+and `attestation: caller|unknown`. Generated roles require actual provider/model/time;
+this is caller-attested, not independently verified. Unchanged roles retain their original
+metadata. Reused/manual/unknown roles are never assigned a fabricated generation time.
+Auxiliary calls are recorded only by the server after a response: role, provider,
+model, `model_evidence: response|request`, generation timestamp and input SHA-256.
+
+The normal content pipeline also writes version 1 provenance. Its `calls` list records
+successful parsed responses with input/output hashes and response or request evidence;
+`roles` maps `key_insights_extractor` to `key_insights` for the shared role contract.
+Deterministically padded key insights must not be represented as a completed generated
+role. A successful explicit summarize rerun replaces the old generation's metadata and
+inline content caches together; historical metadata must not describe replacement content.
+Here provider is the transport (`local` or `openrouter`); request evidence explicitly
+means the response did not identify its model, not a claim of verified model identity.
+Caller submissions cannot supply auxiliary claims. Preview and commit share this payload.
+
+A draft's optional `allowed_providers` is scoped to that draft: `["local"]` forbids
+all OpenRouter chat and decisions calls; `[]` forbids all auxiliary calls. Denials
+abort submission, including sector verification, without saving partial state.
+Omitting it retains legacy routing. This does not change global model defaults.
+The admin/content-writer episode PATCH accepts `invalidate_caches: true` to refresh
+episode, ticker-insight and CDN caches without changing content; regeneration always
+requests this, including extractor-only and ticker-only updates. Required media URL
+results are verified before episode JSON writes; missing URLs fail commit.
+Ticker-step commits replace the episode's entire insight set, including an empty
+set; persistence failures fail the commit. Other episodes and original publish times
+are unchanged.
+
 ## Purpose (historical 2026-05 to 2026-07)
 
 This spec originally defined the **data contract between the content pipelines (`pipelines/`, writer) and the backend (`backend/`, reader)** for Firestore documents. The field shapes were carried forward into Postgres JSONB.
