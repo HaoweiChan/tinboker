@@ -144,11 +144,11 @@ def test_release_scope_accepts_exact_90_day_boundary_and_rejects_older():
     boundary = now - timedelta(days=90)
     boundary_ms = _ms(boundary)
     boundary_ep = _ep(
-        "曼報", created_ms=_ms(now), released_ms=boundary_ms,
+        "Gooaye 股癌", created_ms=_ms(now), released_ms=boundary_ms,
         spotify_release_date=boundary.date().isoformat(),
     )
     old_ep = _ep(
-        "曼報", created_ms=_ms(now), released_ms=boundary_ms - 1,
+        "Gooaye 股癌", created_ms=_ms(now), released_ms=boundary_ms - 1,
         spotify_release_date=boundary.date().isoformat(),
     )
 
