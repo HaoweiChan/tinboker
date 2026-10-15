@@ -392,3 +392,17 @@ def test_failure_detail_never_leaks_library_messages():
         raise ValueError("postgresql://user:secret@host/db is malformed")
     except ValueError as exc:
         assert _safe_detail(exc) == "ValueError"
+
+
+
+def test_failure_detail_shows_sibling_script_messages():
+    from types import SimpleNamespace
+
+    from scripts.mp3_retention_apply import _autocommit_ready
+    from scripts.mp3_retention_guards import _safe_detail
+
+    with pytest.raises(RuntimeError) as exc:
+        _autocommit_ready(SimpleNamespace(autocommit=False))
+    assert _safe_detail(exc.value) == (
+        "RuntimeError: MP3 retirement requires idle autocommit connections"
+    )
