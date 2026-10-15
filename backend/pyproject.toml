@@ -28,6 +28,7 @@ dependencies = [
     "tqdm>=4.67.1",
     "uvicorn[standard]==0.24.0",
     "yfinance>=0.2.66",
+    "curl_cffi>=0.10",  # yahoo_chart: browser-impersonating TLS; Yahoo 429s plain clients
     "google-auth>=2.23.0",
     "google-cloud-secret-manager>=2.16.0",
 ]

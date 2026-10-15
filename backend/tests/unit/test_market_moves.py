@@ -492,7 +492,8 @@ def test_parse_spark_reads_both_shapes_and_skips_empty_symbols():
 async def test_quotes_batches_twenty_and_a_failed_batch_only_drops_itself(monkeypatch):
     calls = []
 
-    async def get_json(url, params):
+    async def get_json(url, params, retries=2):
+        assert retries == 0                                          # a batch is never retried
         syms = params["symbols"].split(",")
         calls.append(len(syms))
         if len(calls) == 2:
@@ -505,7 +506,7 @@ async def test_quotes_batches_twenty_and_a_failed_batch_only_drops_itself(monkey
     monkeypatch.setattr(yahoo_chart, "cache_get", no_cache)
     monkeypatch.setattr(yahoo_chart, "cache_set", no_cache)
     out = await yahoo_chart.quotes([f"S{i}" for i in range(45)])
-    assert calls == [20, 20, 5] and len(out) == 25
+    assert sorted(calls) == [5, 20, 20] and len(out) == 25
 
 
 # ── the theme lane ──────────────────────────────────────────────────────────
@@ -739,3 +740,101 @@ def test_alert_lands_in_every_admin_bell(temp_db, monkeypatch):
     with session_scope() as db:
         rows = [(n.user_id, n.type, n.title) for n in db.query(UserNotification).all()]
     assert rows == [("u1", "system_alert", "盤中速報連續失敗")]
+
+
+
+@pytest.mark.asyncio
+async def test_quotes_drop_batches_that_miss_the_budget(monkeypatch):
+    import asyncio
+
+    async def get_json(url, params, retries=2):
+        syms = params["symbols"].split(",")
+        if syms[0] == "S20":                                          # the second batch hangs
+            await asyncio.sleep(5)
+        return {s: {"timestamp": [1], "close": [11.0], "chartPreviousClose": 10.0} for s in syms}
+
+    async def no_cache(*_a, **_k):
+        return None
+    monkeypatch.setattr(yahoo_chart, "_get_json", get_json)
+    monkeypatch.setattr(yahoo_chart, "cache_get", no_cache)
+    monkeypatch.setattr(yahoo_chart, "cache_set", no_cache)
+    out = await yahoo_chart.quotes([f"S{i}" for i in range(45)], budget=0.2)
+    assert len(out) == 25 and "S20" not in out and "S40" in out    # one slow batch, not the scan
+
+
+@pytest.mark.asyncio
+async def test_scan_fetches_instruments_concurrently(monkeypatch):
+    import asyncio
+    import time
+    us = mm.MARKETS["US"]
+
+    async def intraday(symbol):
+        await asyncio.sleep(0.2)
+        return _day([100.1] * 3, symbol=symbol, tz="America/New_York")
+
+    async def sigma(symbol):
+        return 1.0
+    monkeypatch.setattr(mm.yahoo_chart, "intraday", intraday)
+    monkeypatch.setattr(mm.yahoo_chart, "sigma", sigma)
+    t0 = time.monotonic()
+    out = await mm.scan(us.indices, datetime.fromtimestamp(OPEN, ZoneInfo("America/New_York")).date(),
+                        datetime.fromtimestamp(OPEN + 300, timezone.utc), 1.0)
+    assert time.monotonic() - t0 < 0.6                              # four indices, not 4 x 0.2s
+    assert [r["id"] for r in out["rows"]] == [i.id for i in us.indices]
+
+
+
+class _Resp:
+    def __init__(self, status, body=None):
+        self.status_code, self._body = status, body or {}
+
+    def json(self):
+        return self._body
+
+
+def _session(responses, seen):
+    class Session:
+        def __init__(self, **kw):
+            seen.append(kw)
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_a):
+            return False
+
+        async def get(self, url, params=None):
+            r = responses.pop(0)
+            if isinstance(r, Exception):
+                raise r
+            return r
+    return Session
+
+
+@pytest.mark.asyncio
+async def test_yahoo_requests_impersonate_a_browser_and_retry_a_429(monkeypatch):
+    seen = []
+    monkeypatch.setattr(yahoo_chart, "AsyncSession", _session([_Resp(429), _Resp(200, {"ok": 1})], seen))
+
+    async def no_sleep(_s):
+        return None
+    monkeypatch.setattr(yahoo_chart.asyncio, "sleep", no_sleep)
+    assert await yahoo_chart._get_json("https://y/chart", {}) == {"ok": 1}
+    assert [kw["impersonate"] for kw in seen] == ["chrome", "chrome"]
+
+
+@pytest.mark.asyncio
+async def test_yahoo_network_errors_and_hard_statuses_become_yahoo_errors(monkeypatch):
+    from curl_cffi.requests.exceptions import RequestException
+
+    async def no_sleep(_s):
+        return None
+    monkeypatch.setattr(yahoo_chart.asyncio, "sleep", no_sleep)
+    monkeypatch.setattr(yahoo_chart, "AsyncSession", _session([RequestException("reset")], []))
+    with pytest.raises(YahooChartError, match="RequestException"):
+        await yahoo_chart._get_json("https://y/chart", {}, retries=0)
+    responses = [_Resp(404), _Resp(200)]
+    monkeypatch.setattr(yahoo_chart, "AsyncSession", _session(responses, []))
+    with pytest.raises(YahooChartError, match="HTTP 404"):
+        await yahoo_chart._get_json("https://y/chart", {})
+    assert len(responses) == 1                                       # a 404 is not retried
