@@ -37,18 +37,21 @@ const SectorExposureRow: React.FC<SectorExposureRowProps> = ({ exp, perf, loadin
           size={13}
           variant="chip"
         />
-        {isUmbrellaSector(exp.exposure_id) ? (
-          // Umbrella sectors (半導體) have no page: label only.
-          <span className="text-sm font-medium truncate flex-1 min-w-0 leading-snug">{exp.display_name}</span>
-        ) : (
-          <Link
-            to={`/sector/${encodeURIComponent(exp.exposure_id)}`}
-            className="text-sm font-medium hover:underline truncate flex-1 min-w-0 leading-snug"
-          >
-            {exp.display_name}
-          </Link>
-        )}
-        {note && <span className="shrink-0 text-2xs text-muted-foreground whitespace-nowrap">{note}</span>}
+        {/* The note sits under the name: inline, it squeezed names to 「AI 先進…」 on phones. */}
+        <div className="flex-1 min-w-0">
+          {isUmbrellaSector(exp.exposure_id) ? (
+            // Umbrella sectors (半導體) have no page: label only.
+            <span className="block text-sm font-medium truncate leading-snug">{exp.display_name}</span>
+          ) : (
+            <Link
+              to={`/sector/${encodeURIComponent(exp.exposure_id)}`}
+              className="block text-sm font-medium hover:underline truncate leading-snug"
+            >
+              {exp.display_name}
+            </Link>
+          )}
+          {note && <span className="block text-2xs text-muted-foreground">{note}</span>}
+        </div>
         <ChangePct value={perf?.avg_change ?? null} sizeClass="text-xs" skeleton={loading && !perf} />
         {hasTickers && (
           <button
