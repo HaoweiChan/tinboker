@@ -724,7 +724,7 @@ SHOW_ASR_FIXES: dict[str, dict[str, str]] = {
         **{v: "燕俐" for v in ("燕麗", "燕妮", "燕莉", "燕尼", "彥莉", "彥麗", "彥利", "彥妮", "彥俐")},
     },
     # One transcript had 漫報 38 times and 曼報 never.
-    "曼報": {"漫報": "曼報"},
+    "曼報": {"漫報": "曼報", "慢報": "曼報"},
 }
 
 

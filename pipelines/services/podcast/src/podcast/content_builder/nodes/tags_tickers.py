@@ -16,7 +16,7 @@ import logging
 import re
 from typing import Any
 
-from src.pipeline.utils import extract_tags_and_tickers
+from src.pipeline.utils import extract_tags_and_tickers, unlink_mismatched_tickers
 
 from ..state import PipelineState
 
@@ -26,9 +26,10 @@ _CJK_RE = re.compile(r"[㐀-鿿]")
 
 
 def derive_tags_tickers(state: PipelineState) -> dict[str, Any]:
-    """Return ``{"tags": [...], "related_tickers": [...]}`` from ``markdown_report``."""
-    tt = extract_tags_and_tickers({"summary_text": state.get("markdown_report", "")})
-    return {"tags": tt["tags"], "related_tickers": tt["tickers"]}
+    """Return cleaned ``markdown_report`` and its canonical tags and related tickers."""
+    markdown = unlink_mismatched_tickers(state.get("markdown_report", ""))
+    tt = extract_tags_and_tickers({"summary_text": markdown})
+    return {"markdown_report": markdown, "tags": tt["tags"], "related_tickers": tt["tickers"]}
 
 
 def dedup_tags_against_sectors(
