@@ -60,7 +60,7 @@ export const CrossShowPanel: React.FC<Props> = ({ episode, data, sectorPerf, sec
               <th className="font-normal pb-1.5">個股／題材</th>
               <th className="font-normal pb-1.5 px-3 whitespace-nowrap">本集</th>
               <th className="font-normal pb-1.5 whitespace-nowrap">其他節目</th>
-              <th className="font-normal pb-1.5 pl-3 whitespace-nowrap">漲跌幅</th>
+              <th className="hidden sm:table-cell font-normal pb-1.5 pl-3 whitespace-nowrap">漲跌幅</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
@@ -82,6 +82,11 @@ export const CrossShowPanel: React.FC<Props> = ({ episode, data, sectorPerf, sec
                       {href ? <Link to={href} className="hover:text-primary">{name}</Link> : name}
                       {isTicker && subject.name && subject.name !== subject.ticker && <span className="block text-xs text-muted-foreground font-normal">{subject.ticker}</span>}
                     </div>
+                    {/* Phones: four columns overflow 375px, so the change rides under the name. */}
+                    <span className="sm:hidden flex items-baseline gap-1 mt-0.5">
+                      <ChangePct value={change} sizeClass="text-xs" skeleton={!isTicker && sectorPerfLoading} />
+                      <span className="text-2xs text-muted-foreground">{isTicker ? '播出至今' : '題材當日'}</span>
+                    </span>
                   </td>
                   <td className={`py-3 px-3 whitespace-nowrap font-semibold ${tone(subject.stance)}`}>{subject.stance ? stanceZh(subject.stance) : '—'}</td>
                   <td className="py-3" title={row ? othersCounts(row.others) : undefined}>
@@ -96,7 +101,7 @@ export const CrossShowPanel: React.FC<Props> = ({ episode, data, sectorPerf, sec
                             <span className="block text-xs text-muted-foreground whitespace-nowrap">{row.others.shows} 個節目</span>
                           </>}
                   </td>
-                  <td className="py-3 pl-3 whitespace-nowrap">
+                  <td className="hidden sm:table-cell py-3 pl-3 whitespace-nowrap">
                     <ChangePct value={change} sizeClass="text-xs" skeleton={!isTicker && sectorPerfLoading} />
                     <span className="block text-2xs text-muted-foreground">{isTicker ? '播出至今' : '題材當日'}</span>
                   </td>
