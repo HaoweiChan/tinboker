@@ -149,11 +149,7 @@ async def lifespan(app: FastAPI):
         from src.database.postgres import get_session
         from src.services.content_source_service import ContentSourceService
         for session in get_session():
-            source_service = ContentSourceService(session)
-            repaired = source_service.repair_manny_seed_social_setting()
-            if repaired:
-                print(f"Repaired {repaired} startup-seeded content source social setting(s).")
-            inserted = source_service.seed_from_config(ALL_SOURCES)
+            inserted = ContentSourceService(session).seed_from_config(ALL_SOURCES)
             if inserted:
                 print(f"Seeded {inserted} new content source(s).")
             break

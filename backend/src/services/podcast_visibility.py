@@ -1,8 +1,10 @@
 """Environment-specific podcast visibility without changing the shared registry."""
 from src.config import settings
 
-HIDDEN_PODCAST_NAMES = frozenset({"曲博科技教室"})
-DEVELOPMENT_ONLY_PODCAST_NAMES = frozenset({"曼報", "鈔錢部署｜盧燕俐"})
+# 曼報: dropped 2026-10-15, too little stock talk (it lives behind 曼報 Pro); its
+# ingested episodes stay in the DB, hidden everywhere.
+HIDDEN_PODCAST_NAMES = frozenset({"曲博科技教室", "曼報"})
+DEVELOPMENT_ONLY_PODCAST_NAMES = frozenset({"鈔錢部署｜盧燕俐"})
 
 
 def hidden_podcast_names() -> frozenset[str]:

@@ -426,5 +426,7 @@ def test_theme_cards_respect_development_only_sources(api, monkeypatch, environm
     monkeypatch.setattr(settings, "environment", environment)
     monkeypatch.setattr(settings, "release_podcast_languages", [])
     names = {row["podcaster"] for row in router._cards(None, 60)}
-    assert names == ({"Gooaye 股癌", "曼報", "鈔錢部署｜盧燕俐"} if visible else {"Gooaye 股癌"})
-    assert bool(router._cards("曼報", 60)) is visible
+    # 曼報 was dropped from the roster: hidden in every environment, development included.
+    assert names == ({"Gooaye 股癌", "鈔錢部署｜盧燕俐"} if visible else {"Gooaye 股癌"})
+    assert bool(router._cards("鈔錢部署｜盧燕俐", 60)) is visible
+    assert not router._cards("曼報", 60)

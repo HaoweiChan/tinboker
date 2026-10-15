@@ -96,12 +96,13 @@ async def test_new_shows_hidden_from_all_insight_reads(monkeypatch, environment,
 
     service = svc.InsightService.__new__(svc.InsightService)
     service._fs = Reader()
-    expected = set(names if visible else names[:1])
+    # 曼報 (names[1]) is hidden everywhere; 鈔錢部署 is development-only.
+    expected = {"Gooaye 股癌", "鈔錢部署｜盧燕俐"} if visible else {"Gooaye 股癌"}
     for rows in (await service.get_recent(), await service.get_by_ticker("2330", today, today)):
         assert {row["podcaster"] for row in rows} == expected
     for name in names[1:]:
-        assert bool(await service.get_by_podcaster(name, today, today)) is visible
-    assert await service.free_insight_counts() == {"2330": 3 if visible else 1}
+        assert bool(await service.get_by_podcaster(name, today, today)) is (visible and name in expected)
+    assert await service.free_insight_counts() == {"2330": len(expected)}
 
 
 @pytest.mark.parametrize("environment", ["development", "production", "staging"])
