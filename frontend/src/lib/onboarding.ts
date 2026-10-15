@@ -36,6 +36,15 @@ export interface ChangelogEntry {
 //   docs/workflows/deploy-flow.md § "In-app changelog (What's new)".
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.14.9',
+    date: '2026-10',
+    items: [
+      '集數頁的「提及個股」和「提及題材」重新分成兩區，改成精簡列表，題材有圖示，漲跌幅對齊。',
+      '清單太長時先顯示前 5 項，點「顯示全部」再展開。',
+      '免費會員可以先看到兩檔個股、兩個題材在其他節目怎麼談；完整對照升級會員就能看。',
+    ],
+  },
+  {
     version: '0.14.8',
     date: '2026-10',
     items: [
