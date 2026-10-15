@@ -572,21 +572,26 @@ export const EpisodeMentionsResponseSchema = z.object({
   disclaimer: z.string(),
 });
 
-/** GET /api/episodes/{id}/cross-show — how other shows spoke about this episode's tickers. */
+/** Public episode subjects; cross-show comparison rows remain member-only. */
+const CrossShowSubjectSchema = z.object({
+  mention_type: z.enum(['ticker', 'sector']),
+  ticker: z.string().nullable(),
+  exposure_id: z.string().nullable(),
+  name: z.string().nullable().optional(),
+  stance: z.enum(['BULLISH', 'BEARISH', 'NEUTRAL']).nullable().optional(),
+});
 export const CrossShowResponseSchema = z.object({
   episode_id: z.string(),
   window_days: z.number(),
   podcaster: z.string().nullable(),
   as_of: z.string().nullable(),
   shows_in_window: z.number(),
-  // Set by the public teaser route, which carries no rows.
   compared: z.number().default(0),
   opposite: z.number().default(0),
-  rows: z.array(z.object({
-    ticker: z.string(),
-    name: z.string().nullable().optional(),
-    stance: z.enum(['BULLISH', 'BEARISH', 'NEUTRAL']).nullable().optional(),
-    others: z.object({ shows: z.number(), mentions: z.number(), bull: z.number(), neutral: z.number(), bear: z.number() }),
+  // Absent from responses cached before this field existed (the CDN keys API GETs by URL).
+  subjects: z.array(CrossShowSubjectSchema).default([]),
+  rows: z.array(CrossShowSubjectSchema.extend({
+    others: z.object({ shows: z.number(), mentions: z.number(), bull: z.number(), neutral: z.number(), bear: z.number(), unknown: z.number().default(0), lean: z.enum(['BULLISH', 'BEARISH', 'NEUTRAL']).nullable().optional() }),
     relation: z.enum(['aligned', 'opposite', 'reserved', 'firmer', 'split', 'alone']),
   })),
   disclaimer: z.string(),

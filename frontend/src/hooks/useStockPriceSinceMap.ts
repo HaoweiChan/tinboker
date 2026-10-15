@@ -29,20 +29,23 @@ export function useStockPriceSinceMap(episodes: Episode[]): Map<string, number> 
   const requestKey = buildRequestKey(episodes);
 
   useEffect(() => {
-    if (!requestKey) return;
+    if (!requestKey) {
+      setMap(new Map());
+      return;
+    }
     const items = buildItems(episodes);
     if (!items.length) return;
 
     // Check cache — if all tickers are fresh, skip the fetch.
     const now = Date.now();
     const stale = items.filter((i) => {
-      const entry = cache.get(i.ticker.toUpperCase());
+      const entry = cache.get(`${i.ticker}:${i.reference_ms}`);
       return !entry || now - entry.ts > TTL;
     });
     const buildMap = (): Map<string, number> => {
       const m = new Map<string, number>();
       for (const i of items) {
-        const entry = cache.get(i.ticker.toUpperCase());
+        const entry = cache.get(`${i.ticker}:${i.reference_ms}`);
         if (entry) m.set(i.ticker.toUpperCase(), entry.value);
       }
       return m;
@@ -52,15 +55,17 @@ export function useStockPriceSinceMap(episodes: Episode[]): Map<string, number> 
       return;
     }
 
+    setMap(buildMap());
     let alive = true;
     apiClient
       .post('/api/stocks/batch-prices-since', { items: stale })
       .then((res) => {
         if (!alive) return;
         const ts = Date.now();
-        for (const [ticker, pct] of Object.entries(res.data ?? {})) {
-          if (Number.isFinite(pct)) {
-            cache.set(ticker.toUpperCase(), { value: pct as number, ts });
+        for (const item of stale) {
+          const pct: unknown = res.data?.[item.ticker];
+          if (typeof pct === 'number' && Number.isFinite(pct)) {
+            cache.set(`${item.ticker}:${item.reference_ms}`, { value: pct, ts });
           }
         }
         setMap(buildMap());
