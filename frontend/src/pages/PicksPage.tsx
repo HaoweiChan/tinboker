@@ -163,6 +163,8 @@ export const PicksPage: React.FC<PicksPageProps> = ({ embedded, mySubscribedPodc
   const [kind, setKind] = useState<'stocks' | 'themes'>('stocks');
   const [view, setView] = useState<'recent' | 'settled'>('recent');
   const [settledTier, setSettledTier] = useState<SettledTier>(7);
+  // 已揭曉 ranks by return by default; 日期 keeps newest-first so dates don't jump.
+  const [sortBy, setSortBy] = useState<'return' | 'date'>('return');
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const sentinelRef = useRef<HTMLDivElement>(null);
 
@@ -311,7 +313,7 @@ export const PicksPage: React.FC<PicksPageProps> = ({ embedded, mySubscribedPodc
   // Dynamic sort: 已揭曉 orders by the active window's return (desc, unsettled
   // last); 最新 keeps the newest-master order from groupPicks.
   const sortedGroups = useMemo(() => {
-    if (view !== 'settled') return filteredGroups;
+    if (view !== 'settled' || sortBy === 'date') return filteredGroups;
     const wk = TIER_WINDOW[settledTier];
     const ret = (g: (typeof filteredGroups)[number]) => {
       const refMs = Date.parse(g.master.podcast_launch_time);
@@ -326,7 +328,7 @@ export const PicksPage: React.FC<PicksPageProps> = ({ embedded, mySubscribedPodc
       if (ra !== rb) return rb - ra;
       return Date.parse(b.master.podcast_launch_time) - Date.parse(a.master.podcast_launch_time);
     });
-  }, [filteredGroups, view, settledTier, windowsMap]);
+  }, [filteredGroups, view, sortBy, settledTier, windowsMap]);
 
   // Swiped-away picks. The key is the master mention, so the card comes back the next
   // time the ticker is named (a newer master) — the pick is hidden, not the ticker.
@@ -466,6 +468,20 @@ export const PicksPage: React.FC<PicksPageProps> = ({ embedded, mySubscribedPodc
             </select>
             <ChevronDown size={13} aria-hidden="true" className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground" />
           </label>
+          {view === 'settled' && (
+            <label className="relative shrink-0">
+              <span className="sr-only">排序</span>
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value === 'date' ? 'date' : 'return')}
+                className="min-h-10 appearance-none rounded-md border border-border bg-card py-2 pl-2.5 pr-7 text-xs text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+              >
+                <option value="return">依報酬</option>
+                <option value="date">依日期</option>
+              </select>
+              <ChevronDown size={13} aria-hidden="true" className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            </label>
+          )}
         </div>
 
         {kind === 'themes' ? (
@@ -473,6 +489,7 @@ export const PicksPage: React.FC<PicksPageProps> = ({ embedded, mySubscribedPodc
             scope={scope}
             shows={themeShows}
             period={view === 'settled' ? settledTier : null}
+            sortByDate={sortBy === 'date'}
             podcastImages={podcastImageMap}
             onPlaySegment={onPlaySegment}
             onShowAll={() => setScope('all')}

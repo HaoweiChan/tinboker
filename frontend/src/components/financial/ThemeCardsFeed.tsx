@@ -19,6 +19,8 @@ interface ThemeCardsFeedProps {
   podcastImages: Map<string, string | undefined>;
   onPlaySegment?: (episodeId: string, startTimeMs: number) => void;
   onShowAll: () => void;
+  /** Keep newest-first even when a period is set (default ranks by return). */
+  sortByDate?: boolean;
 }
 
 const PAGE_SIZE = 30;
@@ -27,7 +29,7 @@ const RANK_CAP = 120;
 const WINDOW = { 7: 'd7', 30: 'd30', 90: 'd90' } as const;
 
 /** The 題材 side of 走勢: themes each show has been talking about, newest run first. */
-export const ThemeCardsFeed: React.FC<ThemeCardsFeedProps> = ({ scope, shows, period, podcastImages, onPlaySegment, onShowAll }) => {
+export const ThemeCardsFeed: React.FC<ThemeCardsFeedProps> = ({ scope, shows, period, podcastImages, onPlaySegment, onShowAll, sortByDate }) => {
   const [cards, setCards] = useState<ThemeCardData[] | null>(null);
   const [error, setError] = useState('');
 
@@ -78,7 +80,7 @@ export const ThemeCardsFeed: React.FC<ThemeCardsFeedProps> = ({ scope, shows, pe
   );
   const windowsMap = useTickerWindowReturns(refs);
   const ranked = useMemo(() => {
-    if (period === null) return candidates;
+    if (period === null || sortByDate) return candidates;
     const key = WINDOW[period];
     const score = (c: ThemeCardData) => {
       const values = c.tickers
@@ -87,7 +89,7 @@ export const ThemeCardsFeed: React.FC<ThemeCardsFeedProps> = ({ scope, shows, pe
       return values.length ? values.reduce((a, b) => a + b, 0) / values.length : Number.NEGATIVE_INFINITY;
     };
     return [...candidates].sort((a, b) => score(b) - score(a));
-  }, [candidates, period, windowsMap]);
+  }, [candidates, period, sortByDate, windowsMap]);
   const visible = useMemo(() => ranked.slice(0, shown), [ranked, shown]);
 
   if (error) return <p role="alert" className="bg-card border border-border rounded-md p-10 text-center text-sm text-muted-foreground">{error}</p>;
