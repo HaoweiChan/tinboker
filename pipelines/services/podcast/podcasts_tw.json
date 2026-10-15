@@ -10,18 +10,6 @@
     }
   },
   {
-    "name": "曼報",
-    "social_enabled": false,
-    "link": "https://feed.firstory.me/rss/user/cmq4u0p94003n01xn3eia6e7k",
-    "limit": 10,
-    "lookback_days": 30,
-    "max_episodes": 10,
-    "transcript_option": {
-      "transcript_service": "groq",
-      "model": "whisper-large-v3"
-    }
-  },
-  {
     "name": "鈔錢部署｜盧燕俐",
     "social_enabled": false,
     "link": "https://feeds.soundon.fm/podcasts/3066dd74-f792-49dd-a506-4c6997f2dc8c.xml",
