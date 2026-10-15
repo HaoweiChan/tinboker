@@ -13,6 +13,8 @@ interface SectorExposureRowProps {
   perf?: SectorBoardItem;
   /** True while the board is still loading, so the change shows a skeleton not a dash. */
   loading?: boolean;
+  /** Short muted note before the change, e.g. 「3 個節目也談到」. */
+  note?: string;
 }
 
 /**
@@ -20,7 +22,7 @@ interface SectorExposureRowProps {
  * and the sector's aggregate performance. Collapsed by default; the chevron
  * expands the full list of constituent tickers so the rail stays scannable.
  */
-const SectorExposureRow: React.FC<SectorExposureRowProps> = ({ exp, perf, loading = false }) => {
+const SectorExposureRow: React.FC<SectorExposureRowProps> = ({ exp, perf, loading = false, note }) => {
   const [open, setOpen] = useState(false);
   const tickers = exp.resolved_tickers ?? [];
   const hasTickers = tickers.length > 0;
@@ -46,6 +48,7 @@ const SectorExposureRow: React.FC<SectorExposureRowProps> = ({ exp, perf, loadin
             {exp.display_name}
           </Link>
         )}
+        {note && <span className="shrink-0 text-2xs text-muted-foreground whitespace-nowrap">{note}</span>}
         <ChangePct value={perf?.avg_change ?? null} sizeClass="text-xs" skeleton={loading && !perf} />
         {hasTickers && (
           <button
@@ -84,6 +87,8 @@ interface SectorExposureListProps {
   /** exposure_id → board entry, for the per-sector performance + visuals. */
   perfMap: Map<string, SectorBoardItem>;
   loading?: boolean;
+  /** exposure_id → note shown on that row. */
+  notes?: Map<string, string>;
 }
 
 /** Collapse duplicate exposure_ids (episodes can tag the same sector more than once),
@@ -99,10 +104,10 @@ function dedupeExposures(exposures: SectorExposure[]): SectorExposure[] {
   return [...byId.values()];
 }
 
-export const SectorExposureList: React.FC<SectorExposureListProps> = ({ exposures, perfMap, loading }) => (
+export const SectorExposureList: React.FC<SectorExposureListProps> = ({ exposures, perfMap, loading, notes }) => (
   <div className="flex flex-col gap-1.5">
     {dedupeExposures(exposures).map((exp) => (
-      <SectorExposureRow key={exp.exposure_id} exp={exp} perf={perfMap.get(exp.exposure_id)} loading={loading} />
+      <SectorExposureRow key={exp.exposure_id} exp={exp} perf={perfMap.get(exp.exposure_id)} loading={loading} note={notes?.get(exp.exposure_id)} />
     ))}
   </div>
 );
