@@ -57,7 +57,6 @@ export function useEpisodeSentimentMap(episodeIds: string[]): Map<string, Map<st
     return () => {
       alive = false;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
 
   return map;

@@ -72,7 +72,6 @@ export function useTranslationMap(tickers: string[]): Map<string, TranslationEnt
     return () => {
       alive = false;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tickerKey]);
 
   return map;

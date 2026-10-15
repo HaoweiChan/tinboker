@@ -27,8 +27,18 @@ import { comparableRows, crossShowLead, othersLean } from '../shared/crossShow.j
   assert.deepEqual(rows.map((r) => r.ticker), ['A', 'B', 'C'], 'the API response is not reordered in place');
   assert.deepEqual(rows.map(othersLean), ['BULLISH', 'BULLISH', null]);
   assert.equal(othersLean({ stance: 'BULLISH', relation: 'split', others: o }), null);
+  assert.equal(othersLean({ stance: null, relation: 'split', others: { ...o, lean: 'NEUTRAL' } }), 'NEUTRAL', 'other shows lean independently of a missing sector stance');
+  assert.equal(othersLean({ stance: null, relation: 'split', others: { ...o, lean: null, unknown: 3 } }), null, 'unknown opinions do not fabricate a neutral lean');
   assert.ok(crossShowLead({ window_days: 30, compared: 3, opposite: 0 }).endsWith('沒有看法相反的。'));
 }
+
+const CROSS_SUBJECTS = [
+  { mention_type: 'ticker', ticker: '2330', exposure_id: null, name: '台積電', stance: 'BULLISH' },
+  { mention_type: 'ticker', ticker: '2327', exposure_id: null, name: '國巨', stance: 'NEUTRAL' },
+  { mention_type: 'sector', ticker: null, exposure_id: 'sector_mlcc', name: '被動元件 MLCC', stance: null },
+];
+let crossSubjects = CROSS_SUBJECTS;
+let crossCompared = 2;
 
 const here = dirname(fileURLToPath(import.meta.url));
 const mw = await import(resolve(here, '../functions/_middleware.js'));
@@ -144,7 +154,7 @@ globalThis.fetch = async (url) => {
     return json({
       episode_id: 'abc123', window_days: 30, podcaster: '股癌', as_of: '2026-09-20', shows_in_window: 9,
       // The public route: counts only, the rows are members-only.
-      rows: [], compared: 2, opposite: 1,
+      subjects: crossSubjects, rows: [], compared: crossCompared, opposite: crossCompared ? 1 : 0,
       disclaimer: 'x',
     });
   }
@@ -231,16 +241,27 @@ try {
     assert.ok(epPage.includes(needle), `episode body missing ${needle}`);
   }
   assert.equal((epPage.match(/href="\/sector\/sector_mlcc"/g) || []).length, 1, 'duplicate sector exposures collapse to one link');
-  // 其他節目怎麼看: the one section that is not a restatement of the episode itself.
+  // 這集談到的: the one section that is not a restatement of the episode itself.
   for (const needle of [
-    '<h2>其他節目怎麼看</h2>',
-    '有 2 檔在發布前 30 天內也被其他節目談到，其中 1 檔看法相反。',
-    '每一檔本集與其他節目的看法對照是會員內容。',
+    '<h2>這集談到的</h2>',
+    '有 2 項在發布前 30 天內也被其他節目談到，其中 1 項看法相反。',
+    '各個股與題材在本集與其他節目的看法對照是會員內容。',
   ]) {
     assert.ok(epPage.includes(needle), `episode body missing ${needle}`);
   }
-  assert.ok(epPage.indexOf('其他節目怎麼看') < epPage.indexOf('聯準會鴿聲振奮台股'), 'the cross-show section comes before the summary');
+  assert.ok(epPage.indexOf('這集談到的') < epPage.indexOf('聯準會鴿聲振奮台股'), 'the cross-show section comes before the summary');
   assert.ok(readFileSync(resolve(here, '../src/components/episode/CrossShowPanel.tsx'), 'utf8').includes("shared/crossShow.js'"), 'CrossShowPanel no longer reads shared/crossShow.js');
+  crossCompared = 0;
+  const alonePage = renderPage(await metaFor('/episode/abc123', ORIGIN, API));
+  assert.ok(alonePage.includes('<h2>這集談到的</h2>'), 'subjects without other shows still render');
+  assert.ok(alonePage.includes('有 0 項在發布前 30 天'), 'zero comparison lead stays accurate');
+  assert.ok(alonePage.includes('被動元件 MLCC</a> · 本集：—'), 'themes without stance render a dash');
+  crossSubjects = [];
+  const emptyPage = renderPage(await metaFor('/episode/abc123', ORIGIN, API));
+  assert.ok(!emptyPage.includes('<h2>這集談到的</h2>'), 'no content_mentions means no panel despite summary tickers');
+  assert.ok(!emptyPage.includes('<h2>相關個股</h2>'), 'summary tickers do not create a second section');
+  crossSubjects = CROSS_SUBJECTS;
+  crossCompared = 2;
   assert.deepEqual(ldTypes(episode), ['PodcastEpisode', 'BreadcrumbList']);
   assert.equal(episode.ld[0].hasPart.length, 2, 'one Clip per timestamped chapter');
   assert.equal(episode.ld[0].hasPart[0].url, `${ORIGIN}/episode/abc123#t-37`);

@@ -179,3 +179,12 @@ export function convertToLineData(data: ChartDataPoint[]): LineData[] {
   return lineData;
 }
 
+
+/**
+ * The price on a lightweight-charts point: `value` on line/area data, `close` on
+ * bars. Whitespace points carry neither and give undefined.
+ */
+export function pointPrice(point: object): number | undefined {
+  const p = point as { value?: number; close?: number };
+  return p.value || p.close;
+}

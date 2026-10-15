@@ -3,6 +3,7 @@
  * Includes both public and admin endpoints.
  */
 
+import axios from 'axios';
 import { apiClient } from './client';
 import { useAppStore } from '@/store/useAppStore';
 import type {
@@ -46,8 +47,8 @@ export async function getTranslation(
       { params: { market, name_en: nameEn, auto_create: autoCreate } }
     );
     return response.data;
-  } catch (error: any) {
-    if (error.response?.status === 404) {
+  } catch (error: unknown) {
+    if (axios.isAxiosError(error) && error.response?.status === 404) {
       return null;
     }
     throw error;

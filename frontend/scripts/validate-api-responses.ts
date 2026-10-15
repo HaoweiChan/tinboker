@@ -8,12 +8,11 @@
  * Or: tsx scripts/validate-api-responses.ts
  */
 
-import axios from 'axios';
+import axios, { type AxiosRequestConfig } from 'axios';
+import type { z } from 'zod';
 import {
-  GraphResponseSchema,
   CompanyDetailSchema,
   EventsResponseSchema,
-  InteractiveModelsResponseSchema,
 } from '../src/validation/schemas';
 import { safeParseResponse } from '../src/validation/schemas';
 
@@ -51,15 +50,15 @@ async function validateEndpoint(
   name: string,
   method: 'GET' | 'POST' | 'PUT' | 'DELETE',
   url: string,
-  schema?: any,
-  data?: any
+  schema?: z.ZodType<unknown>,
+  data?: unknown
 ): Promise<void> {
   const startTime = Date.now();
   const fullUrl = `${getBaseURL()}${url}`;
   console.log(`🔗 Testing: ${method} ${fullUrl}`);
   
   try {
-    const config: any = { method, url };
+    const config: AxiosRequestConfig = { method, url };
     if (data) {
       config.data = data;
     }
@@ -99,9 +98,11 @@ async function validateEndpoint(
       });
       console.log(`⚠️  ${name} - No schema defined (${responseTime}ms)`);
     }
-  } catch (error: any) {
+  } catch (error: unknown) {
     const responseTime = Date.now() - startTime;
-    const errorMessage = error.response?.data?.detail || error.message || 'Unknown error';
+    const errorMessage = axios.isAxiosError(error)
+      ? error.response?.data?.detail || error.message
+      : error instanceof Error ? error.message : 'Unknown error';
     results.push({
       endpoint: name,
       method,

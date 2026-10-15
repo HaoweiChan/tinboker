@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import type { IChartApi, ISeriesApi } from 'lightweight-charts';
+import { pointPrice } from '@/utils/chartDataUtils';
 
 
 interface UseSynchronizedCrosshairOptions {
@@ -67,7 +68,7 @@ export function useSynchronizedCrosshair({
           }
 
           // Get price from the current chart's data
-          const price = (data as any).value || (data as any).close;
+          const price = pointPrice(data);
           
           if (price === undefined || price === null || !Number.isFinite(price)) {
             isSyncingRef.current = false;
@@ -97,14 +98,14 @@ export function useSynchronizedCrosshair({
                       }
                     }
 
-                    const closestPrice = (closestPoint as any).value || (closestPoint as any).close;
+                    const closestPrice = pointPrice(closestPoint);
                     const closestTime = closestPoint.time;
 
                     if (closestPrice !== undefined && closestPrice !== null && Number.isFinite(closestPrice)) {
-                      otherChart.setCrosshairPosition(closestPrice, closestTime as any, otherSeries);
+                      otherChart.setCrosshairPosition(closestPrice, closestTime, otherSeries);
                     }
                   }
-                } catch (e) {
+                } catch {
                   // Ignore errors
                 }
               }
@@ -119,7 +120,7 @@ export function useSynchronizedCrosshair({
         if (typeof unsubscribe === 'function') {
           unsubscribeFunctions.push(unsubscribe);
         }
-      } catch (e) {
+      } catch {
         // Ignore errors
       }
     });
@@ -129,7 +130,7 @@ export function useSynchronizedCrosshair({
         if (typeof unsubscribe === 'function') {
           try {
             unsubscribe();
-          } catch (e) {
+          } catch {
             // Ignore errors
           }
         }

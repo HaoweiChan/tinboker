@@ -1,9 +1,20 @@
+import axios from 'axios';
+import type { z } from 'zod';
 import { apiClient } from './client';
 import type { GraphData } from '../types';
 import { GraphResponseSchema, InteractiveModelsResponseSchema, parseResponse } from '../../validation/schemas';
 
 
-function processGraphDataResponse(data: any): GraphData {
+/** A graph as the API may send it: bare, or wrapped in ``{ data: {...}, timestamp }``. */
+interface RawGraph {
+  nodes?: unknown;
+  edges?: unknown;
+}
+interface RawGraphResponse extends RawGraph {
+  data?: RawGraph;
+}
+
+function processGraphDataResponse(data: RawGraphResponse | null | undefined): GraphData {
   if (!data) {
     console.error('[API] processGraphDataResponse - data is null/undefined');
     throw new Error('API returned empty response');
@@ -68,7 +79,8 @@ export async function getSupplyChainVisual(): Promise<GraphData> {
       });
     }
     return processGraphDataResponse(response.data);
-  } catch (error: any) {
+  } catch (error: unknown) {
+    if (!axios.isAxiosError(error)) throw error;
     if (error.response && error.response.data) {
       if (import.meta.env.DEV) {
         console.warn('[API] getSupplyChainVisual - Error but found data in error.response.data:', error.response.data);
@@ -82,7 +94,7 @@ export async function getSupplyChainVisual(): Promise<GraphData> {
           console.warn('[API] getSupplyChainVisual - Found data in error.request.response:', responseData);
         }
         return processGraphDataResponse(responseData);
-      } catch (_) { /* Not JSON */ }
+      } catch { /* Not JSON */ }
     }
     throw error;
   }
@@ -95,7 +107,8 @@ export async function getOwnershipVisual(): Promise<GraphData> {
       console.log('[API] getOwnershipVisual response:', response.data);
     }
     return processGraphDataResponse(response.data);
-  } catch (error: any) {
+  } catch (error: unknown) {
+    if (!axios.isAxiosError(error)) throw error;
     if (error.response && error.response.data) {
       if (import.meta.env.DEV) {
         console.warn('[API] getOwnershipVisual - Error but found data in error.response.data:', error.response.data);
@@ -109,7 +122,7 @@ export async function getOwnershipVisual(): Promise<GraphData> {
           console.warn('[API] getOwnershipVisual - Found data in error.request.response:', responseData);
         }
         return processGraphDataResponse(responseData);
-      } catch (_) { /* Not JSON */ }
+      } catch { /* Not JSON */ }
     }
     throw error;
   }
@@ -122,7 +135,8 @@ export async function getClusterVisual(): Promise<GraphData> {
       console.log('[API] getClusterVisual response:', response.data);
     }
     return processGraphDataResponse(response.data);
-  } catch (error: any) {
+  } catch (error: unknown) {
+    if (!axios.isAxiosError(error)) throw error;
     if (error.response && error.response.data) {
       if (import.meta.env.DEV) {
         console.warn('[API] getClusterVisual - Error but found data in error.response.data:', error.response.data);
@@ -136,13 +150,13 @@ export async function getClusterVisual(): Promise<GraphData> {
           console.warn('[API] getClusterVisual - Found data in error.request.response:', responseData);
         }
         return processGraphDataResponse(responseData);
-      } catch (_) { /* Not JSON */ }
+      } catch { /* Not JSON */ }
     }
     throw error;
   }
 }
 
-export async function getInteractiveModels(): Promise<any[]> {
+export async function getInteractiveModels(): Promise<z.infer<typeof InteractiveModelsResponseSchema>['data']> {
   const response = await apiClient.get('/api/visuals/interactive-models');
   if (response.data.data) {
     const validated = parseResponse(InteractiveModelsResponseSchema, response.data);

@@ -3,7 +3,7 @@
 from datetime import datetime, timedelta
 
 import pytest
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 
 import src.services.mention_sync as ms
@@ -20,6 +20,11 @@ from src.database.models import (
 @pytest.fixture
 def session():
     engine = create_engine("sqlite:///:memory:")
+
+    @event.listens_for(engine, "connect")
+    def enable_foreign_keys(connection, _):
+        connection.execute("PRAGMA foreign_keys=ON")
+
     for model in (ContentMention, TickerPerformanceSnapshot, SectorPerformanceSnapshot,
                   StockDailyClose, StockDailyOHLC):
         model.__table__.create(bind=engine)
@@ -153,6 +158,19 @@ def test_sync_ticker_mentions_heals_start_s_of_existing_rows(session, monkeypatc
     assert ms.sync_ticker_mentions(session) == 0
     assert session.query(ContentMention).one().mention_start_s == pytest.approx(1575.708)
     assert ms.sync_ticker_mentions(session) == 0  # second pass changes nothing
+
+
+def test_sync_ticker_mentions_follows_a_regenerated_stance(session, monkeypatch):
+    """A regenerated episode keeps its mention keys but can change its view; the row
+    must follow (鈔錢部署 kept 中立 on 聯發科 after a rerun that said 看多)."""
+    row = {**_insight_row(), "sentiment_label": "NEUTRAL", "bluf_thesis": "舊版"}
+    monkeypatch.setattr(ms, "_fetch_recent_insight_rows", lambda days: [row])
+    ms.sync_ticker_mentions(session)
+
+    row.update(sentiment_label="BULLISH", bluf_thesis="新版")
+    assert ms.sync_ticker_mentions(session) == 0  # updated, not re-inserted
+    m = session.query(ContentMention).one()
+    assert (m.sentiment_label, m.thesis) == ("BULLISH", "新版")
 
 
 def test_parse_start_s_shapes():
@@ -489,3 +507,84 @@ def test_rescore_reaches_completed_snapshots_scored_before_the_fix(session):
     # Stamped, so the next cycle leaves them alone.
     assert ms.rescore_price_break_snapshots(session) == {
         "price_break_ticker_rescored": 0, "price_break_sector_rescored": 0}
+
+
+@pytest.mark.parametrize("mention_type", ["ticker", "sector"])
+def test_sync_mentions_reconciles_removed_and_empty_sources(session, monkeypatch, mention_type):
+    now = datetime.utcnow() - timedelta(days=2)
+    episode = "adc98e8c_a34b94e2aee904b2"
+    snapshot_model = TickerPerformanceSnapshot if mention_type == "ticker" else SectorPerformanceSnapshot
+    source_field = "ticker" if mention_type == "ticker" else "exposure_id"
+    rows = []
+    for subject in ("AMZN", "META"):
+        rows.append({
+            **_insight_row(episode_id=episode, ticker=subject, launch=now.isoformat()),
+            "exposure_id": subject, "mentioned_at": now,
+        })
+    if mention_type == "ticker":
+        monkeypatch.setattr(ms, "_fetch_recent_insight_rows", lambda days: rows)
+        sync = ms.sync_ticker_mentions
+    else:
+        monkeypatch.setattr(ms, "_scan_sector_exposures", lambda: rows)
+        sync = ms.sync_sector_mentions
+    assert sync(session) == 2
+    for mention in session.query(ContentMention).all():
+        session.add(snapshot_model(
+            mention_id=mention.id, mention_date=now.strftime("%Y-%m-%d"),
+            **{source_field: getattr(mention, source_field)},
+        ))
+    # Neither other sources, macro claims, nor history outside the scan is owned here.
+    for key, source, kind, date in (
+        ("external", "article", mention_type, now),
+        ("macro", "podcast", "macro", now),
+        ("historical", "podcast", mention_type, now - timedelta(days=500)),
+    ):
+        session.add(ContentMention(
+            mention_key=key, episode_id=episode, source_type=source,
+            mention_type=kind, mentioned_at=date, extraction_method="test",
+        ))
+    session.commit()
+    kept_id = session.query(snapshot_model).filter(getattr(snapshot_model, source_field) == "META").one().id
+
+    rows.pop(0)
+    assert sync(session) == 0
+    assert {m.mention_key for m in session.query(ContentMention)} == {
+        f"{episode}:{mention_type}:META", "external", "macro", "historical",
+    }
+    assert session.query(snapshot_model).one().id == kept_id
+
+    # The episode now has no mentions at all while the rest of the window still does.
+    rows[:] = [{
+        **_insight_row(episode_id="other_ep", ticker="NVDA", launch=now.isoformat()),
+        "exposure_id": "NVDA", "mentioned_at": now,
+    }]
+    assert sync(session) == 1
+    expected = {f"other_ep:{mention_type}:NVDA", "external", "macro", "historical"}
+    assert {m.mention_key for m in session.query(ContentMention)} == expected
+    assert session.query(snapshot_model).count() == 0
+
+    # A wholly empty source window is a failed read, not a mass retraction.
+    rows.clear()
+    assert sync(session) == 0
+    assert {m.mention_key for m in session.query(ContentMention)} == expected
+
+
+@pytest.mark.parametrize("mention_type", ["ticker", "sector"])
+def test_sync_mentions_failed_source_does_not_delete(session, monkeypatch, mention_type):
+    session.add(ContentMention(
+        mention_key="ep:ticker:AMZN", episode_id="ep", source_type="podcast",
+        mention_type=mention_type, mentioned_at=datetime.utcnow(), extraction_method="test",
+    ))
+    session.commit()
+
+    def fail(*args):
+        raise RuntimeError("source unavailable")
+
+    if mention_type == "ticker":
+        monkeypatch.setattr(ms, "_fetch_recent_insight_rows", fail)
+        with pytest.raises(RuntimeError, match="source unavailable"):
+            ms.sync_ticker_mentions(session)
+    else:
+        monkeypatch.setattr(ms, "_scan_sector_exposures", fail)
+        assert ms.sync_sector_mentions(session) == 0
+    assert session.query(ContentMention).count() == 1

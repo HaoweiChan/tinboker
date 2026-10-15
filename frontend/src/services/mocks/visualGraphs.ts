@@ -85,7 +85,7 @@ export const getSupplyChainData = () => {
       ticker: n.ticker,
       status: n.status,
       layerLabel: n.layerLabel,
-    }) as any,
+    }) as GraphNode['data'],
     position: { x: 0, y: 0 },
   }));
 
@@ -136,7 +136,7 @@ export const getOwnershipData = () => {
       ticker: n.ticker,
       isRoot: n.isRoot,
       ownership: n.ownership,
-    }) as any,
+    }) as GraphNode['data'],
     position: { x: 0, y: 0 },
   }));
 
@@ -185,7 +185,7 @@ export const getClusterData = (): { nodes: GraphNode[]; edges: GraphEdge[] } => 
       label: n.label,
       ticker: n.ticker,
       group: n.group,
-    }) as any,
+    }) as GraphNode['data'],
     position: i === 0 ? { x: 250, y: 250 } : { x: rand(), y: rand() },
   }));
 

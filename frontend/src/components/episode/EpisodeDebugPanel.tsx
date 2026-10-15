@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import axios from 'axios';
 import { ChevronDown, ChevronRight, Loader2, Save, X, Plus } from 'lucide-react';
 import { patchEpisode, getEpisodeHeavy, type Episode } from '@/services';
 
@@ -145,7 +146,8 @@ export const EpisodeDebugPanel: React.FC<Props> = ({ episode, onUpdated }) => {
   const toggle = (s: SectionId) => {
     setOpenSections((prev) => {
       const next = new Set(prev);
-      next.has(s) ? next.delete(s) : next.add(s);
+      if (next.has(s)) next.delete(s);
+      else next.add(s);
       return next;
     });
   };
@@ -166,16 +168,17 @@ export const EpisodeDebugPanel: React.FC<Props> = ({ episode, onUpdated }) => {
     setSaving(section);
     setStatus(null);
     try {
-      const payload: Record<string, unknown> = {};
+      const payload: Parameters<typeof patchEpisode>[2] = {};
       if (section === 'summary') payload.summary_content = summary;
       if (section === 'insights') payload.key_insights = insights;
       if (section === 'tickers') payload.related_tickers = tickers;
       if (section === 'tags') payload.tags = tags;
-      const updated = await patchEpisode(episode.podcast_name, episode.id, payload as any);
+      const updated = await patchEpisode(episode.podcast_name, episode.id, payload);
       onUpdated(updated);
       setStatus(`${section} 已儲存`);
-    } catch (e: any) {
-      setStatus(`儲存失敗: ${e?.response?.data?.detail || e.message}`);
+    } catch (e: unknown) {
+      const detail = axios.isAxiosError(e) ? e.response?.data?.detail || e.message : String(e);
+      setStatus(`儲存失敗: ${detail}`);
     } finally {
       setSaving(null);
     }

@@ -45,8 +45,8 @@ export async function getEpisodeMentions(episodeId: string): Promise<EpisodeMent
   return parseResponse(EpisodeMentionsResponseSchema, response.data);
 }
 
-/** How other shows spoke about this episode's tickers in the 30 days before it aired.
- *  The public route returns counts only; `detail` is the member route with the rows. */
+/** Episode subjects plus comparison counts for the 30 days before airing.
+ *  Other shows' per-subject opinions are returned only by the member `detail` route. */
 export async function getEpisodeCrossShow(episodeId: string, detail = false): Promise<CrossShowResponse> {
   const response = await apiClient.get(
     `/api/episodes/${encodeURIComponent(episodeId)}/cross-show${detail ? '/detail' : ''}`,

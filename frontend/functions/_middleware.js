@@ -23,7 +23,7 @@
 // to the unmodified SPA: this middleware can never break a page.
 
 import { ABOUT, TERMS, METHODOLOGY } from '../shared/sitePages.js';
-import { CROSS_SHOW_LOCKED, crossShowLead } from '../shared/crossShow.js';
+import { CROSS_SHOW_LOCKED, crossShowLead, stanceZh } from '../shared/crossShow.js';
 
 const CRAWLER = /bot|crawl|spider|mediapartners|facebookexternalhit|facebot|twitterbot|\bline\b|slackbot|whatsapp|telegrambot|discordbot|pinterest|linkedinbot|redditbot|embedly|quora|skypeuripreview|applebot|googlebot|bingbot|baiduspider|yandex|duckduckbot/i;
 
@@ -427,7 +427,7 @@ export async function metaFor(pathname, origin, api) {
   let m = pathname.match(/^\/episode\/([^/]+)\/?$/);
   if (m) {
     const id = decodeURIComponent(m[1]);
-    // cross-show is the page's 其他節目怎麼看 panel: an enrichment with a deadline.
+    // Cross-show supplies the discussed subjects and counts with a deadline.
     const [r, cross] = await Promise.all([
       fetch(`${api}/api/episodes/${encodeURIComponent(id)}`),
       withTimeout(getJson(`${api}/api/episodes/${encodeURIComponent(id)}/cross-show`, CACHE_1H), 5000),
@@ -452,13 +452,6 @@ export async function metaFor(pathname, origin, api) {
     }
     image ||= BRAND_IMG;
     const chs = chapters(e.summary_content);
-    // Ticker names come from the sector baskets; the episode itself only carries symbols.
-    const names = {};
-    const sectors = new Map();
-    for (const s of e.sector_exposures || []) {
-      if (s.exposure_id) sectors.set(s.exposure_id, s);
-      for (const t of s.resolved_tickers || []) if (t.ticker && t.name) names[t.ticker] = t.name;
-    }
     const released = e.released_at_ms ? new Date(e.released_at_ms).toISOString() : null;
     // Mirrors the PodcastEpisode JSON-LD EpisodeDetail builds client-side.
     const ld = {
@@ -471,19 +464,20 @@ export async function metaFor(pathname, origin, api) {
       ...(released ? { datePublished: released } : {}),
       ...(chs.length ? { hasPart: chs.map((c) => ({ '@type': 'Clip', name: c.title, startOffset: c.sec, url: `${url}#t-${c.sec}` })) } : {}),
     };
-    // Same sentences CrossShowPanel shows a non-member (shared/crossShow.js). The
-    // per-ticker comparison is members-only, so the public route returns counts and
-    // this prints counts — the crawler never sees more than a signed-out reader.
-    const crossHtml = cross && cross.compared > 0
-      ? `<h2>其他節目怎麼看</h2><p>${esc(crossShowLead(cross))}</p><p>${esc(CROSS_SHOW_LOCKED)}</p>`
+    // Public subjects and aggregate counts mirror the signed-out episode panel.
+    // Other shows' per-subject comparisons never enter the crawler body.
+    const crossHtml = cross?.subjects?.length
+      ? `<h2>這集談到的</h2><p>${esc(crossShowLead(cross))}</p>`
+        + ul(cross.subjects.map((subject) => `${subject.mention_type === 'ticker'
+          ? stockLink(subject.ticker, subject.name)
+          : sectorLink({ exposure_id: subject.exposure_id, display_name: subject.name })} · 本集：${subject.stance ? esc(stanceZh(subject.stance)) : '—'}`))
+        + `<p>${esc(CROSS_SHOW_LOCKED)}</p>`
       : '';
     const body = `<p>${podcasterLink(name)}${released ? ` · ${esc(day(released))}` : ''}</p>`
       + ((e.key_insights || []).length ? `<h2>重點</h2>${ul(e.key_insights.map(esc))}` : '')
       + (chs.length ? `<h2>章節</h2>${ul(chs.map((c) => `${hms(c.sec)} ${esc(c.title)}`))}` : '')
       + crossHtml
-      + mdToHtml(e.summary_content)
-      + ((e.related_tickers || []).length ? `<h2>相關個股</h2>${ul(e.related_tickers.map((t) => stockLink(t, names[t])))}` : '')
-      + (sectors.size ? `<h2>產業 / 題材</h2>${ul([...sectors.values()].map(sectorLink))}` : '');
+      + mdToHtml(e.summary_content);
     return {
       title,
       description: `${name} · ${title} — 結構化摘要與重點。`,

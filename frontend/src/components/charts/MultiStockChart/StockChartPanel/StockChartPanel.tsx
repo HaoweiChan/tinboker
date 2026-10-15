@@ -1,8 +1,8 @@
 import React, { useEffect, useRef, useMemo, useState } from 'react';
 import { createChart, ColorType } from 'lightweight-charts';
-import type { IChartApi, ISeriesApi } from 'lightweight-charts';
+import type { IChartApi, ISeriesApi, MouseEventParams } from 'lightweight-charts';
 import { useChartResizeObserver } from '../../hooks/useChartResizeObserver';
-import { convertToLineData } from '@/utils/chartDataUtils';
+import { convertToLineData, pointPrice } from '@/utils/chartDataUtils';
 import type { ChartDataPoint, StockEvent } from '@/services/types';
 import { useAppStore } from '@/store/useAppStore';
 import { mockStockEvents } from '@/services/mocks';
@@ -29,7 +29,6 @@ interface StockChartPanelProps {
  */
 export const StockChartPanel: React.FC<StockChartPanelProps> = ({
   ticker,
-  name: _name,
   data,
   color,
   isLast,
@@ -229,7 +228,7 @@ export const StockChartPanel: React.FC<StockChartPanelProps> = ({
             .getPropertyValue('--text-secondary')
             .trim() || (isDark ? '#94a3b8' : '#64748b');
           
-          const updateLegend = (param: any) => {
+          const updateLegend = (param: MouseEventParams) => {
             if (!legend || !param.time) {
               legend.innerHTML = `<div style="color: ${legendTextColor}">${ticker}</div>`;
               return;
@@ -237,7 +236,7 @@ export const StockChartPanel: React.FC<StockChartPanelProps> = ({
 
             const data = param.seriesData.get(areaSeries);
             if (data) {
-              const price = (data as any).value || (data as any).close || 0;
+              const price = pointPrice(data) || 0;
               const date = new Date((param.time as number) * 1000);
               const formattedDate = date.toLocaleDateString('zh-TW', { month: '2-digit', day: '2-digit' });
               const formattedPrice = typeof price === 'number' ? price.toFixed(2) : 'N/A';
@@ -364,7 +363,7 @@ export const StockChartPanel: React.FC<StockChartPanelProps> = ({
           borderColor: borderColor,
         },
       });
-    } catch (e) {
+    } catch {
       // Chart might be disposed, ignore
     }
   }, [isDark]);

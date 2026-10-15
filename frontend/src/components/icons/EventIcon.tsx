@@ -52,15 +52,3 @@ export const EventIcon: React.FC<EventIconProps> = ({
   );
 };
 
-// Helper function for chart labels (returns text)
-export const getEventIconText = (type: StockEventType): string => {
-  const labels: Record<StockEventType, string> = {
-    earnings: 'E',
-    conference: 'C',
-    news: 'N',
-    dividend: 'D',
-    custom: '★',
-  };
-  return labels[type] || '•';
-};
-

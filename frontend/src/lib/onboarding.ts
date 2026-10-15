@@ -36,6 +36,16 @@ export interface ChangelogEntry {
 //   docs/workflows/deploy-flow.md § "In-app changelog (What's new)".
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.14.8',
+    date: '2026-10',
+    items: [
+      '集數頁的「提及個股」和「其他節目怎麼看」合成一區「這集談到的」，個股和題材放在一起看，不會再重複出現。',
+      '會員可以看到其他節目對同一個題材的討論熱度，不只個股。',
+      '節目重新整理後，這一集的看多、看空會跟著更新，不再停在舊版本。',
+      '走勢頁已結算的看法可以依報酬或日期排序。',
+    ],
+  },
+  {
     version: '0.14.7',
     date: '2026-10',
     items: [

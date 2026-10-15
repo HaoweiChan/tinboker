@@ -8,7 +8,7 @@ export interface SearchResultItem {
     icon_url?: string;
     link: string;
     market?: 'TW' | 'US' | null;
-    metadata?: Record<string, any>;
+    metadata?: Record<string, unknown>;
 }
 
 export interface SearchResponse {

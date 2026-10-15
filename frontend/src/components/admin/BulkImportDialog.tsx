@@ -3,6 +3,7 @@
  */
 
 import React, { useState, useRef } from 'react';
+import axios from 'axios';
 import { X, Upload, FileText, Check, AlertCircle } from 'lucide-react';
 import { bulkImportCSV } from '@/services/api/translations';
 import type { BulkImportResponse } from '@/types/translation';
@@ -55,8 +56,8 @@ export const BulkImportDialog: React.FC<BulkImportDialogProps> = ({
       if (response.imported > 0 || response.updated > 0) {
         onSuccess();
       }
-    } catch (err: any) {
-      setError(err.response?.data?.detail || 'Import failed');
+    } catch (err: unknown) {
+      setError((axios.isAxiosError(err) && err.response?.data?.detail) || 'Import failed');
     } finally {
       setLoading(false);
     }

@@ -9,11 +9,11 @@ import ReactFlow, {
   BackgroundVariant,
   useReactFlow
 } from 'reactflow';
-import type { Node } from 'reactflow';
+import type { Edge, Node } from 'reactflow';
 import { getOwnershipData } from '@/services/mocks';
 import { getOwnershipVisual } from '@/services';
 import { getLayoutedElements } from '@/utils/graphUtils';
-import { DisplayMode, NodeStyle } from '@/services/types';
+import { DisplayMode, NodeStyle, type GraphData } from '@/services/types';
 import { GraphControlToggle } from '../GraphControlToggle';
 import { useAppStore } from '@/store/useAppStore';
 import { RotateCcw, BarChart2, DollarSign, PieChart, Circle, CircleDashed } from 'lucide-react';
@@ -24,14 +24,15 @@ import { standardNodeTypes } from '../nodeTypes';
 
 interface TreeGraphProps {
   isWidget?: boolean;
-  data?: any; // UnifiedGraphResponse['data']
+  data?: GraphData;
   title?: string;
   description?: string;
 }
 
 const TreeGraphContent: React.FC<TreeGraphProps> = ({ isWidget = false, data, title, description }) => {
   // State for API-fetched data and loading state
-  const [apiData, setApiData] = useState<any>(null);
+  // The API's GraphData, or the mock's already-laid-out React Flow elements.
+  const [apiData, setApiData] = useState<GraphData | { nodes: Node[]; edges: Edge[] } | null>(null);
   const [apiFailed, setApiFailed] = useState(false);
   
   // Fetch data from API if not provided via props
@@ -60,7 +61,7 @@ const TreeGraphContent: React.FC<TreeGraphProps> = ({ isWidget = false, data, ti
     const dataSource = data || (apiFailed ? null : apiData);
     
     if (dataSource && dataSource.nodes && dataSource.edges) {
-      const nodes = dataSource.nodes.map((n: any) => ({
+      const nodes = dataSource.nodes.map((n) => ({
         ...n,
         position: n.position || { x: 0, y: 0 },
         data: {
@@ -103,7 +104,7 @@ const TreeGraphContent: React.FC<TreeGraphProps> = ({ isWidget = false, data, ti
     const dataSource = data || (apiFailed ? null : apiData);
     if (dataSource && dataSource.nodes && dataSource.edges) {
         const { nodes: layoutNodes, edges: layoutEdges } = getLayoutedElements(
-            dataSource.nodes.map((n: any) => ({...n, position: n.position || {x:0,y:0}})), 
+            dataSource.nodes.map((n) => ({...n, position: n.position || {x:0,y:0}})), 
             dataSource.edges, 
             'TB'
         );
@@ -121,7 +122,7 @@ const TreeGraphContent: React.FC<TreeGraphProps> = ({ isWidget = false, data, ti
     // But since users drag nodes, we might want to restore original positions.
     if (data && data.nodes && data.edges) {
          const { nodes: layoutNodes } = getLayoutedElements(
-            data.nodes.map((n: any) => ({...n, position: {x:0,y:0}})), 
+            data.nodes.map((n) => ({...n, position: {x:0,y:0}})), 
             data.edges, 
             'TB'
         );

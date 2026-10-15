@@ -209,17 +209,18 @@ def test_cross_show_counts_other_shows_inside_the_window_before_the_episode(sess
     assert body["shows_in_window"] == 3  # 股癌, 財經一路發, 財報狗 — M觀點 is outside the window
     by = {r["ticker"]: r for r in body["rows"]}
     assert by["2330"] == {
-        "ticker": "2330", "name": "台積電", "stance": "BULLISH",
-        "others": {"shows": 2, "mentions": 2, "bull": 2, "neutral": 0, "bear": 0}, "relation": "aligned",
+        "mention_type": "ticker", "ticker": "2330", "exposure_id": None,
+        "name": "台積電", "stance": "BULLISH",
+        "others": {"shows": 2, "mentions": 2, "bull": 2, "neutral": 0, "bear": 0, "unknown": 0, "lean": "BULLISH"}, "relation": "aligned",
     }
-    assert by["3037"]["others"] == {"shows": 1, "mentions": 2, "bull": 2, "neutral": 0, "bear": 0}
+    assert by["3037"]["others"] == {"shows": 1, "mentions": 2, "bull": 2, "neutral": 0, "bear": 0, "unknown": 0, "lean": "BULLISH"}
     assert by["3037"]["name"] == "欣興" and by["3037"]["relation"] == "opposite"
     assert by["6981"]["relation"] == "alone" and by["6981"]["others"]["shows"] == 0
     # Most-discussed elsewhere first.
     assert [r["ticker"] for r in body["rows"]] == ["2330", "3037", "6981"]
     assert "並非投資建議" in body["disclaimer"]
 
-    # The public route says how many, never which: 6981 has nobody to compare against.
+    # The public route exposes own subjects, never per-subject comparison details.
     teaser = _call(api.get_episode_cross_show_teaser("ep"))
     assert teaser["rows"] == [] and teaser["compared"] == 2 and teaser["opposite"] == 1
     assert teaser["shows_in_window"] == 3 and teaser["window_days"] == 30
@@ -230,9 +231,9 @@ def test_cross_show_detail_is_member_only():
     assert any(d.call is api.require_member for d in route.dependant.dependencies)
 
 
-def test_cross_show_is_empty_for_an_episode_with_no_ticker_mentions(session):
+def test_cross_show_is_empty_for_an_episode_with_no_mentions(session):
     body = _call(api.get_episode_cross_show("nope"))
-    assert body["rows"] == [] and body["shows_in_window"] == 0
+    assert body["subjects"] == [] and body["rows"] == [] and body["shows_in_window"] == 0
 
 
 def test_cross_show_respects_the_release_roster(session, monkeypatch):
@@ -245,3 +246,79 @@ def test_cross_show_respects_the_release_roster(session, monkeypatch):
 
     assert body["rows"][0]["relation"] == "alone" and body["shows_in_window"] == 1
 
+
+
+def _sector(db, episode_id, show, exposure_id, label, when, name="半導體"):
+    db.add(ContentMention(
+        mention_key=f"{episode_id}:sector:{exposure_id}", episode_id=episode_id, podcaster=show,
+        mention_type="sector", exposure_id=exposure_id, display_name=name,
+        mentioned_at=when, confidence=0.9, extraction_method="alias_match", sentiment_label=label,
+    ))
+    db.commit()
+
+
+def test_cross_show_compares_sectors_by_id_and_keeps_public_subjects_private_comparisons(session):
+    aired = datetime(2026, 9, 20, 3)
+    _sector(session, "ep", "股癌", "semi", None, aired)
+    _sector(session, "ep", "股癌", "ai", "BEARISH", aired, "人工智慧")
+    _sector(session, "other", "財報狗", "semi", "BULLISH", datetime(2026, 8, 21))
+    _sector(session, "other", "財報狗", "ai", "BULLISH", aired, "AI")
+    _sector(session, "own", "股癌", "semi", "BEARISH", aired)
+    _sector(session, "old", "舊節目", "semi", "BEARISH", datetime(2026, 8, 20, 23, 59))
+    _sector(session, "future", "未來節目", "semi", "BEARISH", datetime(2026, 9, 21))
+    _sector(session, "different-id", "另一節目", "different", "BEARISH", aired)
+    # Identical identifier strings in different mention types must not mix.
+    _mention(session, "ticker", "另一節目", "semi", "BEARISH", aired)
+
+    body = _call(api.get_episode_cross_show("ep"))
+    by = {r["exposure_id"]: r for r in body["rows"]}
+    assert by["semi"]["stance"] is None and by["semi"]["ticker"] is None
+    assert by["semi"]["name"] == "半導體"
+    assert by["semi"]["others"] == {"shows": 1, "mentions": 1, "bull": 1, "neutral": 0, "bear": 0, "unknown": 0, "lean": "BULLISH"}
+    assert by["ai"]["relation"] == "opposite"
+    teaser = _call(api.get_episode_cross_show_teaser("ep"))
+    assert teaser["rows"] == []
+    assert teaser["compared"] == 2 and teaser["opposite"] == 1
+    assert teaser["subjects"] == body["subjects"]
+    assert all(set(s) == {"mention_type", "ticker", "exposure_id", "name", "stance"}
+               for s in teaser["subjects"])
+
+
+def test_cross_show_keeps_all_subjects_and_counts_beyond_eight(session):
+    aired = datetime(2026, 9, 20, 3)
+    for index in range(9):
+        _mention(session, "ep", "股癌", str(index), "BULLISH", aired)
+        _mention(session, "other", "財報狗", str(index), "BEARISH", aired)
+    _sector(session, "ep", "股癌", "semi", None, aired)
+    body = _call(api.get_episode_cross_show("ep"))
+    assert len(body["rows"]) == len(body["subjects"]) == 10
+    teaser = _call(api.get_episode_cross_show_teaser("ep"))
+    assert teaser["compared"] == teaser["opposite"] == 9
+
+
+def test_cross_show_sector_release_scope_and_uncompared_subject(session, monkeypatch):
+    aired = datetime(2026, 9, 20, 3)
+    _sector(session, "ep", "股癌", "semi", None, aired)
+    _sector(session, "en", "English Show", "semi", "BULLISH", aired)
+    monkeypatch.setattr(api.podcast_service, "_allowed_podcast_names", _roster(frozenset({"股癌"})))
+    body = _call(api.get_episode_cross_show_teaser("ep"))
+    assert len(body["subjects"]) == 1 and body["compared"] == 0
+    assert body["shows_in_window"] == 1
+    monkeypatch.setattr(api.podcast_service, "_allowed_podcast_names", _roster(frozenset()))
+    assert _call(api.get_episode_cross_show_teaser("ep"))["subjects"] == []
+
+
+def test_cross_show_unlabeled_sectors_do_not_fabricate_a_neutral_lean(session):
+    aired = datetime(2026, 9, 20, 3)
+    _sector(session, "ep", "股癌", "semi", None, aired)
+    _sector(session, "other", "財報狗", "semi", None, aired)
+    body = _call(api.get_episode_cross_show("ep"))
+    row = body["rows"][0]
+    assert row["others"] == {"shows": 1, "mentions": 1, "bull": 0, "neutral": 0,
+                              "bear": 0, "unknown": 1, "lean": None}
+    assert row["relation"] == "split" and row["stance"] is None
+    _sector(session, "labeled", "另一節目", "semi", "BULLISH", aired)
+    row = _call(api.get_episode_cross_show("ep"))["rows"][0]
+    assert row["others"]["mentions"] == 2
+    assert row["others"]["unknown"] == 1 and row["others"]["neutral"] == 0
+    assert row["others"]["lean"] == "BULLISH"

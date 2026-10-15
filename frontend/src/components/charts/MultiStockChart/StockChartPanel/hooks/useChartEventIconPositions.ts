@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
-import type { IChartApi } from 'lightweight-charts';
+import type { Coordinate, IChartApi, UTCTimestamp } from 'lightweight-charts';
 import type { StockEvent } from '@/services/types';
 
 export interface EventIconPosition {
@@ -47,18 +47,11 @@ export function useChartEventIconPositions(
         // Get chart width for approximate calculations
         let chartWidth = 800; // Default fallback
         try {
-          // Try to get the chart's actual DOM element
-          const chartElement = (chartRef.current as any).element?.();
-          if (chartElement) {
-            chartWidth = chartElement.clientWidth || chartElement.offsetWidth || 800;
-          } else {
-            // Fallback: try to get from options
-            const chartOptions = (chartRef.current as any).options?.();
-            if (chartOptions && chartOptions.width) {
-              chartWidth = chartOptions.width;
-            }
+          const chartOptions = chartRef.current.options();
+          if (chartOptions && chartOptions.width) {
+            chartWidth = chartOptions.width;
           }
-        } catch (e) {
+        } catch {
           // Use default width if we can't get it
         }
         
@@ -68,7 +61,7 @@ export function useChartEventIconPositions(
               const eventDateSeconds = Math.floor(event.date / 1000);
               
               // Try timeToCoordinate first
-              let x = timeScale.timeToCoordinate(eventDateSeconds as unknown as any);
+              let x = timeScale.timeToCoordinate(eventDateSeconds as UTCTimestamp);
               
               // If x is null, try to calculate approximate position if event is within buffer
               if ((x === null || x === undefined) && visibleRange && visibleRange.from && visibleRange.to) {
@@ -83,7 +76,7 @@ export function useChartEventIconPositions(
                   const timePosition = (eventDateSeconds - from) / timeRange;
                   // Approximate x position (assuming price scale takes ~80px on right)
                   const plotAreaWidth = chartWidth > 0 ? chartWidth - 80 : 800;
-                  x = (timePosition * plotAreaWidth) as any;
+                  x = (timePosition * plotAreaWidth) as Coordinate;
                 }
               }
               

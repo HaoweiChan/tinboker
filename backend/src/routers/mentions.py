@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import func
+from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session
 
 from src.cache.cdn_cache import CacheProfile, cdn_cache_trending, cdn_cached
@@ -185,7 +185,6 @@ async def get_episode_mentions(episode_id: str):
 # thing only this site can add is the other shows — who else was talking about the same
 # names in the same weeks, and whether they leaned the same way.
 CROSS_SHOW_WINDOW_DAYS = 30
-CROSS_SHOW_MAX_ROWS = 8
 # A lean needs this share of the other shows' mentions; below it they "disagree".
 _LEAN_SHARE = 0.6
 
@@ -201,6 +200,14 @@ def _stance(label: Optional[str]) -> Optional[str]:
     return None
 
 
+def _cross_show_lean(bull: int, neutral: int, bear: int) -> Optional[str]:
+    total = bull + neutral + bear
+    if total == 0:
+        return None
+    return next((k for k, n in (("BULLISH", bull), ("BEARISH", bear), ("NEUTRAL", neutral))
+                 if n / total >= _LEAN_SHARE), None)
+
+
 def cross_show_relation(mine: Optional[str], bull: int, neutral: int, bear: int) -> str:
     """How this episode's stance on a ticker sits against the other shows' mentions.
 
@@ -213,8 +220,7 @@ def cross_show_relation(mine: Optional[str], bull: int, neutral: int, bear: int)
     total = bull + neutral + bear
     if total == 0:
         return "alone"
-    lean = next((k for k, n in (("BULLISH", bull), ("BEARISH", bear), ("NEUTRAL", neutral))
-                 if n / total >= _LEAN_SHARE), None)
+    lean = _cross_show_lean(bull, neutral, bear)
     if lean is None:
         return "split"
     if mine == lean:
@@ -227,10 +233,10 @@ def cross_show_relation(mine: Optional[str], bull: int, neutral: int, bear: int)
 @router.get("/episodes/{episode_id}/cross-show")
 @cdn_cache_trending
 async def get_episode_cross_show_teaser(episode_id: str):
-    """The public face of the cross-show comparison: how many of this episode's tickers
-    other shows also discussed, and how many of those they took the opposite side on.
-    Counts only — which tickers, and which way, is the member route below. This is also
-    what the crawler body prints, so it must never carry the rows.
+    """Public episode subjects and aggregate cross-show comparison counts.
+
+    Other shows' per-subject opinions belong only to the member route below. This is
+    also what the crawler body prints, so it must never carry comparison rows.
     """
     full = await _cross_show(episode_id)
     compared = [r for r in full["rows"] if r["others"]["shows"] > 0]
@@ -247,7 +253,7 @@ async def get_episode_cross_show(episode_id: str, _user: UserResponse = Depends(
 
 
 async def _cross_show(episode_id: str) -> dict:
-    """For each ticker this episode discussed: how many OTHER shows mentioned it in the
+    """For each ticker or theme this episode discussed: how many OTHER shows mentioned it in the
     30 days up to the episode's release day, how those mentions split, and how this
     episode's stance relates to them.
 
@@ -256,14 +262,16 @@ async def _cross_show(episode_id: str) -> dict:
     every other mention read.
     """
     empty = {"episode_id": episode_id, "window_days": CROSS_SHOW_WINDOW_DAYS, "podcaster": None,
-             "as_of": None, "shows_in_window": 0, "rows": [], "disclaimer": DISCLAIMER}
+             "as_of": None, "shows_in_window": 0, "subjects": [], "rows": [], "disclaimer": DISCLAIMER}
     allowed = await podcast_service._allowed_podcast_names()
     for db in get_session():
+        subject_filter = or_(
+            and_(ContentMention.mention_type == "ticker", ContentMention.ticker.isnot(None)),
+            and_(ContentMention.mention_type == "sector", ContentMention.exposure_id.isnot(None)),
+        )
         mine = (
             scope_mentions(db.query(ContentMention), allowed)
-            .filter(ContentMention.episode_id == episode_id,
-                    ContentMention.mention_type == "ticker",
-                    ContentMention.ticker.isnot(None))
+            .filter(ContentMention.episode_id == episode_id, subject_filter)
             .all()
         )
         if not mine:
@@ -273,53 +281,71 @@ async def _cross_show(episode_id: str) -> dict:
         end = datetime(aired.year, aired.month, aired.day) + timedelta(days=1)
         start = end - timedelta(days=CROSS_SHOW_WINDOW_DAYS + 1)
         window = (
-            scope_mentions(db.query(ContentMention.ticker, ContentMention.podcaster,
+            scope_mentions(db.query(ContentMention.mention_type, ContentMention.ticker,
+                                    ContentMention.exposure_id, ContentMention.podcaster,
                                     ContentMention.sentiment_label), allowed)
-            .filter(ContentMention.mention_type == "ticker",
+            .filter(subject_filter,
                     ContentMention.mentioned_at >= start,
                     ContentMention.mentioned_at < end,
                     ContentMention.episode_id != episode_id)
             .all()
         )
-        shows_in_window = {p for _, p, _ in window if p} | ({podcaster} if podcaster else set())
-        mine_by_ticker = {m.ticker: m for m in mine}
-        others: dict = {t: {"shows": set(), "bull": 0, "neutral": 0, "bear": 0} for t in mine_by_ticker}
-        for ticker, show, label in window:
+        shows_in_window = {p for _, _, _, p, _ in window if p} | ({podcaster} if podcaster else set())
+        mine_by_subject = {(m.mention_type, m.ticker if m.mention_type == "ticker" else m.exposure_id): m
+                           for m in mine}
+        others: dict = {key: {"shows": set(), "bull": 0, "neutral": 0, "bear": 0, "unknown": 0} for key in mine_by_subject}
+        for mention_type, ticker, exposure_id, show, label in window:
+            key = (mention_type, ticker if mention_type == "ticker" else exposure_id)
             # Another episode of the SAME show is not a second opinion.
-            if ticker not in others or not show or show == podcaster:
+            if key not in others or not show or show == podcaster:
                 continue
-            o = others[ticker]
+            o = others[key]
             o["shows"].add(show)
             stance = _stance(label)
-            o["bull" if stance == "BULLISH" else "bear" if stance == "BEARISH" else "neutral"] += 1
+            o[{"BULLISH": "bull", "BEARISH": "bear", "NEUTRAL": "neutral"}.get(stance, "unknown")] += 1
         # content_mentions rarely carries a display name for tickers; the translation
         # table is where the site's zh-TW names live.
         names = {
             tk: zh or en
             for tk, zh, en in db.query(StockTranslation.ticker, StockTranslation.name_zh_tw,
                                        StockTranslation.name_en)
-            .filter(StockTranslation.ticker.in_(list(mine_by_ticker))).all()
+            .filter(StockTranslation.ticker.in_([m.ticker for m in mine if m.mention_type == "ticker"])).all()
         }
+        subjects = []
         rows = []
-        for ticker, m in mine_by_ticker.items():
-            o = others[ticker]
+        for key, m in mine_by_subject.items():
+            o = others[key]
             stance = _stance(m.sentiment_label)
-            rows.append({
-                "ticker": ticker,
-                "name": names.get(ticker) or m.display_name,
+            subject = {
+                "mention_type": m.mention_type,
+                "ticker": m.ticker if m.mention_type == "ticker" else None,
+                "exposure_id": m.exposure_id if m.mention_type == "sector" else None,
+                "name": (names.get(m.ticker) if m.mention_type == "ticker" else None) or m.display_name,
                 "stance": stance,
-                "others": {"shows": len(o["shows"]), "mentions": o["bull"] + o["neutral"] + o["bear"],
-                           "bull": o["bull"], "neutral": o["neutral"], "bear": o["bear"]},
-                "relation": cross_show_relation(stance, o["bull"], o["neutral"], o["bear"]),
+            }
+            subjects.append(subject)
+            rows.append({
+                **subject,
+                "others": {"shows": len(o["shows"]),
+                           "mentions": o["bull"] + o["neutral"] + o["bear"] + o["unknown"],
+                           "bull": o["bull"], "neutral": o["neutral"], "bear": o["bear"],
+                           "unknown": o["unknown"],
+                           "lean": _cross_show_lean(o["bull"], o["neutral"], o["bear"])},
+                "relation": ("split" if o["unknown"] and not (o["bull"] + o["neutral"] + o["bear"])
+                             else cross_show_relation(stance, o["bull"], o["neutral"], o["bear"])),
             })
-        rows.sort(key=lambda r: (-r["others"]["shows"], -r["others"]["mentions"], r["ticker"]))
+        # Stocks first: they carry a stance; themes only say who else talked about them.
+        subjects.sort(key=lambda s: (s["mention_type"] != "ticker", s["ticker"] or s["exposure_id"]))
+        rows.sort(key=lambda r: (-r["others"]["shows"], -r["others"]["mentions"],
+                                 r["mention_type"], r["ticker"] or r["exposure_id"]))
         return {
             "episode_id": episode_id,
             "window_days": CROSS_SHOW_WINDOW_DAYS,
             "podcaster": podcaster,
             "as_of": aired.date().isoformat(),
             "shows_in_window": len(shows_in_window),
-            "rows": rows[:CROSS_SHOW_MAX_ROWS],
+            "subjects": subjects,
+            "rows": rows,
             "disclaimer": DISCLAIMER,
         }
     return empty
