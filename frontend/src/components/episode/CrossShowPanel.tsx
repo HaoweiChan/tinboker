@@ -70,51 +70,44 @@ export const CrossShowPanel: React.FC<Props> = ({ episode, data, sectorPerf, sec
         <section className="bg-card border border-border rounded-md p-5 sm:p-6 mb-3.5" aria-labelledby="cross-show-title">
           <h3 id="cross-show-title" className="heading-accent text-lg font-semibold text-foreground mb-2">提及個股</h3>
           {lead}
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-xs text-muted-foreground text-left">
-                <th className="font-normal pb-1.5">個股</th>
-                <th className="font-normal pb-1.5 px-3 whitespace-nowrap">本集</th>
-                <th className="font-normal pb-1.5 whitespace-nowrap">其他節目</th>
-                <th className="hidden sm:table-cell font-normal pb-1.5 pl-3 whitespace-nowrap">播出至今</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {tickers.map((subject) => {
-                const row = comparisons.get(subjectKey(subject));
-                const lean = row ? othersLean(row) : null;
-                const ticker = subject.ticker!;
-                const change = isRecentEpisode(episode) ? null : priceSinceMap.get(ticker.toUpperCase()) ?? null;
-                return (
-                  <tr key={subjectKey(subject)}>
-                    <td className="py-3 min-w-24">
-                      <div className="font-semibold text-foreground">
-                        <Link to={`/stock/${encodeURIComponent(ticker)}`} className="hover:text-primary">{subject.name || ticker}</Link>
-                        {subject.name && subject.name !== ticker && <span className="block text-xs text-muted-foreground font-normal">{ticker}</span>}
-                      </div>
-                      {/* Phones: four columns overflow 375px, so the change rides under the name. */}
-                      <span className="sm:hidden flex items-baseline gap-1 mt-0.5">
-                        <ChangePct value={change} sizeClass="text-xs" />
-                        <span className="text-2xs text-muted-foreground">播出至今</span>
-                      </span>
-                    </td>
-                    <td className={`py-3 px-3 whitespace-nowrap font-semibold ${tone(subject.stance)}`}>{subject.stance ? stanceZh(subject.stance) : '—'}</td>
-                    <td className="py-3" title={row ? othersCounts(row.others) : undefined}>
-                      {!isMember ? <span className="text-xs text-muted-foreground whitespace-nowrap">會員限定</span>
-                        : !row ? <span className="text-xs text-muted-foreground">{detailFailed ? '暫時無法載入' : detail ? '—' : '載入中…'}</span>
-                          : row.others.shows === 0 ? <span className="text-xs text-muted-foreground">無其他節目提及</span>
-                            : <>
-                              <span className={`font-semibold whitespace-nowrap ${tone(lean)}`}>{lean ? stanceZh(lean) : '未有明確傾向'}</span>
-                              {isOpposite(row) && <span className="ml-1 text-2xs text-primary">相反</span>}
-                              <span className="block text-xs text-muted-foreground whitespace-nowrap">{row.others.shows} 個節目</span>
-                            </>}
-                    </td>
-                    <td className="hidden sm:table-cell py-3 pl-3 whitespace-nowrap"><ChangePct value={change} sizeClass="text-xs" /></td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+          {/* Same row shape as 提及題材 (SectorExposureList): name + one muted line on the
+              left, then fixed-width stance, change and a chevron-sized gap, so the two
+              sections' change columns line up. */}
+          <div className="flex items-center gap-2 px-2.5 pb-1 text-2xs text-muted-foreground">
+            <span className="flex-1">個股</span>
+            <span className="w-8 text-center">本集</span>
+            <span className="w-16 text-right">播出至今</span>
+            <span className="w-[18px] -mr-0.5" aria-hidden />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            {tickers.map((subject) => {
+              const row = comparisons.get(subjectKey(subject));
+              const lean = row ? othersLean(row) : null;
+              const ticker = subject.ticker!;
+              const change = isRecentEpisode(episode) ? null : priceSinceMap.get(ticker.toUpperCase()) ?? null;
+              const others = !isMember ? <span>其他節目：會員限定</span>
+                : !row ? <span>{detailFailed ? '其他節目：暫時無法載入' : detail ? '' : '其他節目：載入中…'}</span>
+                  : row.others.shows === 0 ? <span>其他節目沒有提到</span>
+                    : <span>
+                      其他 {row.others.shows} 個節目
+                      <span className={`ml-1 font-semibold ${tone(lean)}`}>{lean ? stanceZh(lean) : '看法分歧'}</span>
+                      {isOpposite(row) && <span className="ml-1 text-primary">相反</span>}
+                    </span>;
+              return (
+                <div key={subjectKey(subject)} className="flex items-center gap-2 rounded-md border border-border/60 bg-muted/20 px-2.5 py-2">
+                  <div className="flex-1 min-w-0">
+                    <Link to={`/stock/${encodeURIComponent(ticker)}`} className="block text-sm font-medium hover:underline truncate leading-snug">
+                      {subject.name && subject.name !== ticker ? <>{subject.name}<span className="ml-1.5 font-mono text-2xs text-muted-foreground">{ticker}</span></> : ticker}
+                    </Link>
+                    <span className="block text-2xs text-muted-foreground truncate" title={row ? othersCounts(row.others) : undefined}>{others}</span>
+                  </div>
+                  <span className={`w-8 shrink-0 text-center text-xs font-semibold ${tone(subject.stance)}`}>{subject.stance ? stanceZh(subject.stance) : '—'}</span>
+                  <span className="w-16 shrink-0 text-right"><ChangePct value={change} sizeClass="text-xs" /></span>
+                  <span className="w-[18px] shrink-0 -mr-0.5" aria-hidden />
+                </div>
+              );
+            })}
+          </div>
           {!isMember && (
             <div className="mt-3 flex items-center gap-3 rounded-md border border-dashed border-border px-4 py-3">
               <Lock size={15} className="shrink-0 text-muted-foreground" />

@@ -52,7 +52,7 @@ const SectorExposureRow: React.FC<SectorExposureRowProps> = ({ exp, perf, loadin
           )}
           {note && <span className="block text-2xs text-muted-foreground">{note}</span>}
         </div>
-        <ChangePct value={perf?.avg_change ?? null} sizeClass="text-xs" skeleton={loading && !perf} />
+        <span className="w-16 shrink-0 text-right"><ChangePct value={perf?.avg_change ?? null} sizeClass="text-xs" skeleton={loading && !perf} /></span>
         {hasTickers && (
           <button
             type="button"
@@ -64,6 +64,8 @@ const SectorExposureRow: React.FC<SectorExposureRowProps> = ({ exp, perf, loadin
             <ChevronDown size={14} className={cn('transition-transform duration-200', open && 'rotate-180')} />
           </button>
         )}
+        {/* Keep the chevron's width on rows without constituents so every change lines up. */}
+        {!hasTickers && <span className="w-[18px] shrink-0 -mr-0.5" aria-hidden />}
       </div>
 
       {open && hasTickers && (
