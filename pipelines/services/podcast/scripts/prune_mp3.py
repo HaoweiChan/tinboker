@@ -33,6 +33,15 @@ from src.service.gcs_storage_service import (
 )
 
 PENDING = "mp3_retention_pending"
+# Episode ids whose audio must survive retention (one per line, # comments).
+KEEP_FILE = Path(__file__).with_name("mp3_retention_keep.txt")
+
+
+def _keep_ids() -> set[str]:
+    if not KEEP_FILE.is_file():
+        return set()
+    lines = (line.split("#", 1)[0].strip() for line in KEEP_FILE.read_text().splitlines())
+    return {line for line in lines if line}
 
 
 def _reference_path(url: str) -> Path | None:
@@ -123,9 +132,12 @@ def plan(rows: list[tuple[str, dict]], cutoff_ms: int) -> tuple[list[tuple[Path,
 
     candidates = []
     missing = 0
+    keep = _keep_ids()
     for path, refs in references.items():
         if not path.is_file():
             missing += 1
+            continue
+        if any(episode_id in keep for episode_id, _, _ in refs):
             continue
         if path.name not in ambiguous_names and all(
             eligible and _expired(doc, cutoff_ms) for _, doc, eligible in refs
@@ -296,9 +308,12 @@ def main() -> None:
                 candidates = candidates[:args.batch_size]
             for path, ids, size in candidates:
                 print(f"candidate: {path} ({size:,} bytes, {len(ids)} episode rows)")
-    except Exception:
-        # Connection and query errors can contain a credential-bearing DSN.
-        print("MP3 retention failed; inspect database and media availability", file=sys.stderr)
+    except Exception as exc:
+        # Connection and query errors can contain a credential-bearing DSN; _safe_detail
+        # prints only server diagnostics and our own fixed messages.
+        from scripts.mp3_retention_guards import _safe_detail
+
+        print(f"MP3 retention failed: {_safe_detail(exc)}", file=sys.stderr)
         raise SystemExit(1) from None
 
 

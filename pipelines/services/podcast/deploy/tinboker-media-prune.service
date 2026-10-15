@@ -1,5 +1,5 @@
 [Unit]
-Description=Preview expired podcast MP3 media
+Description=Retire podcast MP3s released more than 90 days ago
 After=network-online.target
 Wants=network-online.target
 
@@ -9,4 +9,15 @@ WorkingDirectory=/root/tinboker/pipelines/services/podcast
 EnvironmentFile=-/root/tinboker/pipelines/.env
 Environment=GOOGLE_APPLICATION_CREDENTIALS=/root/tinboker/pipelines/services/podcast/gcp-service-account.json
 Environment=MEDIA_STORAGE_ROOT=/srv/tinboker-media
-ExecStart=/root/tinboker/pipelines/.venv/bin/python -m scripts.prune_mp3
+Environment=PODCAST_MP3_RETENTION_DAYS=90
+# The installer takes SHARE ROW EXCLUSIVE on the episode tables; never queue live writers
+# behind an idle-in-transaction session (the v0.12.20 boot-DDL outage).
+# Quoted: unquoted, systemd splits on the space and PGOPTIONS becomes a bare "-c",
+# which Postgres rejects at connect (OperationalError on the first run, 2026-10-14).
+Environment="PGOPTIONS=-c lock_timeout=5s"
+# Idempotent: schema, config and triggers only, no tombstones. --apply refuses without it.
+ExecStartPre=/root/tinboker/pipelines/.venv/bin/python -m scripts.mp3_retention_guards --install
+# Each run finalizes paths staged >=4h earlier, then stages new ones, up to the batch.
+# 300/day clears the 2026-10 backlog (~4,300 files, ~173 GB) in about two weeks.
+# Episodes in scripts/mp3_retention_keep.txt are never retired.
+ExecStart=/root/tinboker/pipelines/.venv/bin/python -m scripts.prune_mp3 --apply --batch-size 300

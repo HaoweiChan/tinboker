@@ -13,6 +13,8 @@ class NotificationType(str, Enum):
     STOCK_MENTION = "stock_mention"
     TOPIC_MENTION = "topic_mention"
     PRICE_ALERT = "price_alert"
+    NEWS_DRAFT = "news_draft"
+    SYSTEM_ALERT = "system_alert"
 
 
 class NotificationBase(BaseModel):

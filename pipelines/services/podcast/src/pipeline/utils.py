@@ -10,7 +10,10 @@ from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional
 
 from src.models.podcast_models import PodcastEpisode, Sentence
-from src.podcast.content_builder.nodes.key_insights_extractor import ensure_key_insights
+from src.podcast.content_builder.nodes.key_insights_extractor import (
+    ensure_key_insights,
+    is_placeholder_summary,
+)
 from src.podcast.content_builder.tag_vocabulary import canonical_tag_slug
 
 
@@ -362,3 +365,55 @@ def required_artifact_urls(*, skip_summarize: bool = False, store_audio: bool = 
     if not skip_summarize:
         fields += ["summary_url", "summary_image_url"]
     return tuple(fields)
+
+
+_REGEN_NO_AUDIO_POLICY = {
+    "version": 1,
+    "mode": "regen_without_audio_or_image",
+    "required_urls": ["transcript_url", "summary_url"],
+    "intentionally_omitted_urls": ["mp3_url", "summary_image_url"],
+}
+
+
+def is_regen_without_audio_complete(episode: Dict) -> bool:
+    """Recognize only the explicit, versioned no-audio regen completion policy."""
+    if not isinstance(episode, dict) or episode.get("artifact_completion_policy") != _REGEN_NO_AUDIO_POLICY:
+        return False
+    summary = episode.get("summary_content")
+    return bool(
+        episode.get("transcript_url")
+        and episode.get("summary_url")
+        and isinstance(summary, str)
+        and summary.strip()
+        and not is_placeholder_summary(summary)
+        and has_complete_regen_provenance(episode.get("generation_metadata"))
+    )
+
+
+def has_complete_regen_provenance(metadata: object) -> bool:
+    """Validate provenance for every required generated role, tolerating bad stored data."""
+    if not isinstance(metadata, dict):
+        return False
+    roles = metadata.get("roles")
+    required_roles = {"extractor", "writer", "key_insights", "ticker_extractor", "marp_writer"}
+    if not isinstance(roles, dict) or not required_roles.issubset(roles):
+        return False
+    for role in required_roles:
+        provenance = roles.get(role)
+        if not isinstance(provenance, dict) or provenance.get("source") != "generated":
+            return False
+        for field in ("provider", "model"):
+            value = provenance.get(field)
+            if not isinstance(value, str) or not value.strip() or value.strip().lower() == "unknown":
+                return False
+        digest = provenance.get("output_sha256")
+        if not isinstance(digest, str) or re.fullmatch(r"[a-fA-F0-9]{64}", digest) is None:
+            return False
+    return True
+
+
+def required_episode_artifact_urls(episode: Dict, *, default: tuple) -> tuple:
+    """Apply a persisted exception only when its required transcript/summary exist."""
+    if is_regen_without_audio_complete(episode):
+        return ("transcript_url", "summary_url")
+    return default

@@ -462,6 +462,7 @@ class PromoDraft(Base):
     media = Column(JSON, nullable=False, default=list)
     comments = Column(JSON, nullable=False, default=list)
     platforms = Column(JSON, nullable=False, default=list)
+    news_source = Column(JSON, nullable=True)  # Immutable identity; deleted news drafts retain a tombstone.
     updated_by = Column(String(100), nullable=True)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     created_at = Column(DateTime, default=datetime.utcnow)

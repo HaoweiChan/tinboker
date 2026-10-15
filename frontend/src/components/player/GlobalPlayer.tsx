@@ -7,6 +7,8 @@ import { cn } from '@/lib/utils';
 export const GlobalPlayer: React.FC = () => {
     const { player, closePlayer, clearSeekRequest } = usePlayerStore();
     const [isExpanded, setIsExpanded] = React.useState(false);
+    // A drag on the progress bar. The seek fires once on release, not per move.
+    const [scrub, setScrub] = React.useState<{ sec: number; lastX: number; rate: number } | null>(null);
     const spotifyEmbedRef = React.useRef<SpotifyEmbedRef | null>(null);
     const [, setIsEmbedReady] = React.useState(false);
     const [playbackState, setPlaybackState] = React.useState({
@@ -79,17 +81,38 @@ export const GlobalPlayer: React.FC = () => {
         }
     };
 
-    // Handle progress bar click to seek
-    const handleProgressClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    // Progress bar scrubbing. Dragging straight along the bar maps the finger to the
+    // timeline; sliding the finger up and away slows it down (½ past 40px, ¼ past
+    // 100px), the iOS fine-scrub gesture, so a thumb on a 375px bar can still land on
+    // a sentence rather than a 10-second jump.
+    const secAt = (clientX: number, rect: DOMRect) =>
+        Math.max(0, Math.min(1, (clientX - rect.left) / rect.width)) * playbackState.duration;
+
+    const handleScrubStart = (e: React.PointerEvent<HTMLDivElement>) => {
         e.stopPropagation();
         if (!spotifyEmbedRef.current || playbackState.duration === 0) return;
-
+        e.currentTarget.setPointerCapture(e.pointerId);
         const rect = e.currentTarget.getBoundingClientRect();
-        const x = e.clientX - rect.left;
-        const percentage = x / rect.width;
-        const seekTime = Math.floor(percentage * playbackState.duration);
+        setScrub({ sec: secAt(e.clientX, rect), lastX: e.clientX, rate: 1 });
+    };
 
-        spotifyEmbedRef.current.seekTo(seekTime);
+    const handleScrubMove = (e: React.PointerEvent<HTMLDivElement>) => {
+        if (!scrub) return;
+        const rect = e.currentTarget.getBoundingClientRect();
+        const above = rect.top - e.clientY;
+        const rate = above > 100 ? 0.25 : above > 40 ? 0.5 : 1;
+        const sec = rate === 1
+            ? secAt(e.clientX, rect)
+            : Math.max(0, Math.min(playbackState.duration,
+                scrub.sec + ((e.clientX - scrub.lastX) / rect.width) * playbackState.duration * rate));
+        setScrub({ sec, lastX: e.clientX, rate });
+    };
+
+    const handleScrubEnd = () => {
+        if (!scrub) return;
+        spotifyEmbedRef.current?.seekTo(Math.floor(scrub.sec));
+        setPlaybackState((s) => ({ ...s, position: Math.floor(scrub.sec) }));
+        setScrub(null);
     };
 
     // Handle section click to seek
@@ -105,8 +128,9 @@ export const GlobalPlayer: React.FC = () => {
         return null;
     }
 
+    const shownPosition = scrub ? scrub.sec : playbackState.position;
     const progress = playbackState.duration > 0
-        ? (playbackState.position / playbackState.duration) * 100
+        ? (shownPosition / playbackState.duration) * 100
         : 0;
 
     const spotifyEpisodeId = player.currentEpisodeData.spotifyUri?.split(':').pop();
@@ -117,8 +141,75 @@ export const GlobalPlayer: React.FC = () => {
     const sections = player.currentEpisodeData.timestampedSections || [];
     // Only real chapters track "current"; skip chips never become the active section.
     const currentSection = [...sections].reverse().find(s => !s.skippable && s.timestampSeconds <= playbackState.position);
+    const scrubSection = scrub ? [...sections].reverse().find(s => !s.skippable && s.timestampSeconds <= scrub.sec) : undefined;
     const activeSkippableSection = sections.find(
         (s) => s.skippable && playbackState.position >= s.timestampSeconds && playbackState.position < (s.endSeconds || s.timestampSeconds)
+    );
+
+    // One track, two placements: inline beside the times from sm up, and on a phone a
+    // full-width strip along the player's top edge — inline it was squeezed to ~110px
+    // between the three buttons and the title row.
+    const renderTrack = (sizing: string) => (
+            <div
+                onPointerDown={handleScrubStart}
+                onPointerMove={handleScrubMove}
+                onPointerUp={handleScrubEnd}
+                onPointerCancel={() => setScrub(null)}
+                onClick={(e) => e.stopPropagation()}
+                className={cn("bg-muted rounded-full cursor-pointer group relative overflow-visible touch-none select-none", sizing)}
+            >
+                <div
+                    className={cn("h-full bg-accent-info rounded-full relative z-10", !scrub && "transition-all")}
+                    style={{ width: `${progress}%` }}
+                />
+                {scrub && (
+                    <div
+                        className="absolute bottom-full mb-3 -translate-x-1/2 z-50 pointer-events-none px-2.5 py-1.5 rounded-md bg-foreground text-background shadow-xl text-center whitespace-nowrap"
+                        style={{ left: `clamp(48px, ${progress}%, calc(100% - 48px))` }}
+                    >
+                        <div className="font-mono tabular-nums text-sm font-semibold">{formatTime(scrub.sec)}</div>
+                        {scrubSection && <div className="text-2xs max-w-[200px] truncate opacity-80">{scrubSection.title}</div>}
+                        {scrub.rate < 1 && <div className="text-2xs opacity-70">{scrub.rate === 0.5 ? '半速微調' : '¼ 速微調'}</div>}
+                    </div>
+                )}
+                {scrub && (
+                    <div
+                        className="absolute top-1/2 -translate-x-1/2 -translate-y-1/2 z-30 w-3.5 h-3.5 rounded-full bg-accent-info ring-2 ring-background pointer-events-none"
+                        style={{ left: `${progress}%` }}
+                    />
+                )}
+                {playbackState.duration > 0 && sections.map((section, index) => {
+                    const skippable = !!section.skippable;
+                    const markerPosition = (section.timestampSeconds / playbackState.duration) * 100;
+                    const isCurrentSection = !skippable && currentSection?.timestampSeconds === section.timestampSeconds;
+                    return (
+                        <div
+                            key={`marker-${index}`}
+                            className={cn(
+                                "absolute top-1/2 -translate-y-1/2 z-20 transition-all cursor-pointer",
+                                isCurrentSection
+                                    ? "w-1 h-4 bg-accent-info rounded-sm shadow-md"
+                                    : "w-[3px] h-3 bg-muted-foreground/50 hover:bg-accent-info hover:h-4 hover:w-1 hover:shadow-lg"
+                            )}
+                            style={{ left: `${markerPosition}%`, marginLeft: '-2px' }}
+                            onPointerDown={(e) => e.stopPropagation()}
+                            onMouseEnter={() => setHoveredSection(index)}
+                            onMouseLeave={() => setHoveredSection(null)}
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                handleSectionClick(section.timestampSeconds);
+                            }}
+                        >
+                            {hoveredSection === index && (
+                                <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 bg-foreground text-background text-2xs px-3 py-1.5 rounded-md shadow-xl whitespace-nowrap pointer-events-none z-50 animate-in fade-in slide-in-from-bottom-1 duration-150 max-w-[200px] truncate font-medium">
+                                    {section.title}
+                                </div>
+                            )}
+                        </div>
+                    );
+                })}
+                <div className="absolute inset-0 bg-accent-info/20 opacity-0 group-hover:opacity-100 transition-opacity rounded-full" />
+            </div>
     );
 
     return (
@@ -191,9 +282,14 @@ export const GlobalPlayer: React.FC = () => {
                         </div>
                     </div>
 
+                    {/* Phone: progress as a full-width strip; the pseudo-element widens the tap target */}
+                    <div className="sm:hidden">
+                        {renderTrack("h-1 rounded-none before:absolute before:inset-x-0 before:-top-1 before:-bottom-3 before:content-['']")}
+                    </div>
+
                     {/* Main Player Controls */}
                     <div className="px-4 py-2">
-                        <div className="flex items-center gap-4">
+                        <div className="flex items-center gap-3 sm:gap-4">
                             {/* Playback Controls Group */}
                             <div className="flex items-center gap-1.5 flex-shrink-0">
                                 <button
@@ -201,8 +297,8 @@ export const GlobalPlayer: React.FC = () => {
                                     className="rounded-full hover:bg-muted text-muted-foreground hover:text-foreground transition-colors cursor-pointer relative flex items-center justify-center w-10 h-10"
                                     title="倒退 15 秒"
                                 >
-                                    <RotateCcw size={26} strokeWidth={1.2} className="opacity-80" />
-                                    <span className="absolute text-2xs font-bold">15</span>
+                                    <RotateCcw size={30} strokeWidth={1.6} />
+                                    <span className="absolute pt-px text-[9px] font-semibold tabular-nums leading-none">15</span>
                                 </button>
                                 <button
                                     onClick={handlePlayPause}
@@ -216,14 +312,14 @@ export const GlobalPlayer: React.FC = () => {
                                     className="rounded-full hover:bg-muted text-muted-foreground hover:text-foreground transition-colors cursor-pointer relative flex items-center justify-center w-10 h-10"
                                     title="快進 15 秒"
                                 >
-                                    <RotateCw size={26} strokeWidth={1.2} className="opacity-80" />
-                                    <span className="absolute text-2xs font-bold">15</span>
+                                    <RotateCw size={30} strokeWidth={1.6} />
+                                    <span className="absolute pt-px text-[9px] font-semibold tabular-nums leading-none">15</span>
                                 </button>
                             </div>
 
                             {/* Episode Info and Progress */}
                             <div className="flex-1 min-w-0">
-                                <div className="flex items-center justify-between mb-1">
+                                <div className="flex items-center justify-between sm:mb-1">
                                     <div className="flex items-center gap-2 min-w-0 flex-1">
                                         <span className="text-sm font-semibold truncate text-foreground">
                                             {player.currentEpisodeData.title}
@@ -238,25 +334,24 @@ export const GlobalPlayer: React.FC = () => {
                                             </span>
                                         )}
                                     </div>
-                                    <div className="flex items-center gap-1 ml-4">
+                                    <div className="flex items-center gap-1 ml-2 sm:ml-4">
                                         {unreachableSeek !== null && (
                                             <a
                                                 href={`https://open.spotify.com/episode/${spotifyEpisodeId}?t=${unreachableSeek}`}
                                                 target="_blank"
                                                 rel="noopener noreferrer"
                                                 onClick={(e) => e.stopPropagation()}
-                                                className="mr-1 inline-flex shrink-0 items-center gap-1.5 px-3 py-1.5 rounded-full bg-foreground text-background text-xs font-semibold shadow hover:opacity-90 transition-opacity animate-in fade-in slide-in-from-right duration-200"
+                                                className="mr-1 hidden sm:inline-flex shrink-0 items-center gap-1.5 px-3 py-1.5 rounded-lg bg-foreground text-background text-xs font-semibold shadow hover:opacity-90 transition-opacity animate-in fade-in slide-in-from-right duration-200"
                                                 title="此處只能試聽，登入 Spotify 可在頁面內收聽完整集數"
                                             >
-                                                <span className="sm:hidden">Spotify {formatTime(unreachableSeek)}</span>
-                                                <span className="hidden sm:inline">在 Spotify 從 {formatTime(unreachableSeek)} 收聽</span>
+                                                在 Spotify 從 {formatTime(unreachableSeek)} 收聽
                                                 <ExternalLink size={12} />
                                             </a>
                                         )}
                                         {activeSkippableSection && (
                                             <button
                                                 onClick={() => handleSectionClick(activeSkippableSection.endSeconds || activeSkippableSection.timestampSeconds)}
-                                                className="mr-1 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-accent-info hover:bg-accent-info/90 text-white text-xs font-semibold shadow transition-all cursor-pointer animate-in fade-in slide-in-from-right duration-200"
+                                                className="mr-1 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-accent-info hover:bg-accent-info/90 text-white text-xs font-semibold shadow transition-all cursor-pointer animate-in fade-in slide-in-from-right duration-200"
                                                 title={`略過 ${activeSkippableSection.title}`}
                                             >
                                                 <span>略過 {activeSkippableSection.title}</span>
@@ -290,50 +385,31 @@ export const GlobalPlayer: React.FC = () => {
                                     </div>
                                 </div>
 
+                                {/* Phone second line: the time, and the Spotify fallback as a text link —
+                                    as a button in the title row it pushed ✕ off a 375px screen. */}
+                                <div className="sm:hidden flex items-center gap-2 min-w-0 text-2xs text-muted-foreground">
+                                    <span className="font-mono tabular-nums whitespace-nowrap shrink-0">
+                                        {formatTime(playbackState.position)} / {formatTime(playbackState.duration)}
+                                    </span>
+                                    {unreachableSeek !== null && (
+                                        <a
+                                            href={`https://open.spotify.com/episode/${spotifyEpisodeId}?t=${unreachableSeek}`}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="inline-flex min-w-0 items-center gap-1 font-semibold text-foreground underline underline-offset-2 truncate"
+                                        >
+                                            在 Spotify 從 {formatTime(unreachableSeek)} 收聽
+                                            <ExternalLink size={10} />
+                                        </a>
+                                    )}
+                                </div>
+
                                 {/* Progress Bar with Section Markers */}
-                                <div className="flex items-center gap-2">
+                                <div className="hidden sm:flex items-center gap-2">
                                     <span className="text-2xs font-mono text-muted-foreground tabular-nums w-9 text-right">
                                         {formatTime(playbackState.position)}
                                     </span>
-                                    <div
-                                        onClick={handleProgressClick}
-                                        className="flex-1 h-1.5 bg-muted rounded-full cursor-pointer group relative overflow-visible"
-                                    >
-                                        <div
-                                            className="h-full bg-accent-info rounded-full transition-all relative z-10"
-                                            style={{ width: `${progress}%` }}
-                                        />
-                                        {playbackState.duration > 0 && sections.map((section, index) => {
-                                            const skippable = !!section.skippable;
-                                            const markerPosition = (section.timestampSeconds / playbackState.duration) * 100;
-                                            const isCurrentSection = !skippable && currentSection?.timestampSeconds === section.timestampSeconds;
-                                            return (
-                                                <div
-                                                    key={`marker-${index}`}
-                                                    className={cn(
-                                                        "absolute top-1/2 -translate-y-1/2 z-20 transition-all cursor-pointer",
-                                                        isCurrentSection
-                                                            ? "w-1 h-4 bg-accent-info rounded-sm shadow-md"
-                                                            : "w-[3px] h-3 bg-muted-foreground/50 hover:bg-accent-info hover:h-4 hover:w-1 hover:shadow-lg"
-                                                    )}
-                                                    style={{ left: `${markerPosition}%`, marginLeft: '-2px' }}
-                                                    onMouseEnter={() => setHoveredSection(index)}
-                                                    onMouseLeave={() => setHoveredSection(null)}
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        handleSectionClick(section.timestampSeconds);
-                                                    }}
-                                                >
-                                                    {hoveredSection === index && (
-                                                        <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 bg-foreground text-background text-2xs px-3 py-1.5 rounded-md shadow-xl whitespace-nowrap pointer-events-none z-50 animate-in fade-in slide-in-from-bottom-1 duration-150 max-w-[200px] truncate font-medium">
-                                                            {section.title}
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            );
-                                        })}
-                                        <div className="absolute inset-0 bg-accent-info/20 opacity-0 group-hover:opacity-100 transition-opacity rounded-full" />
-                                    </div>
+                                    {renderTrack('flex-1 h-1.5')}
                                     <span className="text-2xs font-mono text-muted-foreground tabular-nums w-9">
                                         {formatTime(playbackState.duration)}
                                     </span>

@@ -70,8 +70,10 @@ def test_uncertain_skips_writer_and_malformed_answers_fail_closed(tmp_path, monk
 def test_english_source_cache_and_separate_comment(tmp_path, monkeypatch):
     source = article() | {"screenshot_path": str(tmp_path / "missing.png")}
     selector = Mock(return_value=answer())
-    writer = Mock(return_value={"draft": {"post": "新設備開始交貨\n\n客戶已經用上了",
-                                          "evidence_ids": ["0"]}, "usage": {"input_tokens": 25}})
+    quote = source["paragraphs"][0]["text"][:40]
+    writer = Mock(return_value={"draft": {"post": "新設備在 9 月開始交貨\n\n客戶已經用上 3 套",
+                                          "evidence_ids": ["0"], "highlights": [quote]},
+                                "usage": {"input_tokens": 25}})
     monkeypatch.setattr(drafts, "jev", selector)
     monkeypatch.setattr(drafts, "write", writer)
     monkeypatch.setenv("SOCIAL_COPY_WRITER_MODEL", "original-model")
@@ -81,7 +83,10 @@ def test_english_source_cache_and_separate_comment(tmp_path, monkeypatch):
         assert result["draft"]["first_comment"] == source["url"]
         assert not result["draft"]["screenshot_exists"]
         assert result["draft"]["review_required"]
+        assert result["draft"]["highlights"] == [" ".join(quote.split())]
+        assert result["draft"]["post"] == "新設備在9月開始交貨\n\n客戶已經用上3套"
     assert selector.call_count == writer.call_count == 1
+    assert writer.call_args.args[0]["prompt_version"] == 5
     sent_state = json.loads(selector.call_args.args[0]["state"])
     assert sent_state == {"title": source["title"], "paragraphs": source["paragraphs"]}
     assert os.environ["SOCIAL_COPY_WRITER_MODEL"] == "original-model"
@@ -99,19 +104,30 @@ def test_transport_failures_cached_and_evidence_invalid(tmp_path, monkeypatch):
     assert failed.call_count == 1
     report = json.loads((tmp_path / "report.json").read_text())
     assert report["draft"] is None and not report["publish_ready"]
-    with pytest.raises(ValueError):
-        drafts.validate_draft({"draft": {"post": "內容", "evidence_ids": ["invented"]}}, article())
+    with pytest.raises(ValueError):  # no usable quote and no real paragraph ID: nothing supports it
+        drafts.validate_draft({"draft": {"post": "內容", "evidence_ids": ["invented"],
+                                         "highlights": ["never printed in the source at all"]}}, article())
+    text = article()["paragraphs"][0]["text"]
+    kept = drafts.source_quotes({"highlights": [text[:300], text[:60], "never printed in the source", 7]}, article())
+    assert kept == [" ".join(text[:60].split())]  # over-long, paraphrased and non-string are dropped
+    with pytest.raises(ValueError, match="length limit"):
+        drafts.validate_draft({"draft": {"post": "字" * 501, "evidence_ids": ["0"],
+                                         "highlights": [text[:60]]}}, article())
+    for marks in ([], ["a paraphrase that the source never printed"], ["short"], [text[:300]], "not a list"):
+        with pytest.raises(ValueError, match="highlight"):
+            drafts.validate_draft({"draft": {"post": "內容", "evidence_ids": ["0"], "highlights": marks}},
+                                  article())
 
 
 def test_candidate_cap_and_no_selection_default(tmp_path, monkeypatch):
     articles = []
-    for index in range(10):
+    for index in range(drafts.MAX_CANDIDATES + 4):
         item = copy.deepcopy(article(str(index)))
         item["url"] += str(index)
         item["paragraphs"][0]["text"] += str(index)
         articles.append(item)
     result = drafts.run({"articles": articles}, tmp_path, as_of=NOW)
-    assert len(result["candidates"]) == 6
+    assert len(result["candidates"]) == drafts.MAX_CANDIDATES
     assert result["calls"] == [] and result["draft"] is None
 
 
@@ -204,7 +220,8 @@ def test_newest_revision_wins_and_english_only_is_rejected():
     kept, _ = drafts.prefilter({"articles": [old, new]}, NOW)
     assert [a["id"] for a in kept] == ["corrected"]
     with pytest.raises(ValueError, match="Chinese"):
-        drafts.validate_draft({"draft": {"post": "English only", "evidence_ids": ["0"]}}, new)
+        drafts.validate_draft({"draft": {"post": "English only", "evidence_ids": ["0"],
+                                         "highlights": [new["paragraphs"][0]["text"][:40]]}}, new)
 
 
 def test_explicit_writer_model_beats_db_override(monkeypatch):
@@ -234,3 +251,64 @@ def test_writer_transport_has_no_retries_and_bounded_timeout(monkeypatch):
     factory.assert_called_once_with("social_copy_writer", model_override="deepseek/deepseek-v4-pro")
     model.root_client.with_options.assert_called_once_with(timeout=60, max_retries=0)
     assert model.model_copy.call_args.kwargs["update"]["max_tokens"] == 2048
+
+
+def test_writer_gets_one_retry_then_gives_up(tmp_path, monkeypatch):
+    source = article()
+    good = {"draft": {"post": "新設備開始交貨", "evidence_ids": ["0"],
+                      "highlights": [source["paragraphs"][0]["text"][:40]]}}
+    bad = {"draft": good["draft"] | {"post": "我們開始交貨"}}
+    monkeypatch.setattr(drafts, "jev", Mock(return_value=answer()))
+    writer = Mock(side_effect=[bad, good])
+    monkeypatch.setattr(drafts, "write", writer)
+    result = drafts.run({"articles": [source]}, tmp_path / "a", as_of=NOW, select_with_jev=True)
+    assert result["draft"]["post"] == "新設備開始交貨" and writer.call_count == 2
+
+    writer = Mock(side_effect=[bad, TimeoutError(), good])
+    monkeypatch.setattr(drafts, "write", writer)
+    with pytest.raises(RuntimeError):
+        drafts.run({"articles": [source]}, tmp_path / "b", as_of=NOW, select_with_jev=True)
+    assert writer.call_count == 2
+
+
+def test_periods_inside_a_paragraph_and_writer_tics():
+    source = article()
+    quote = source["paragraphs"][0]["text"][:40]
+
+    def draft(post):
+        return {"draft": {"post": post, "evidence_ids": ["0"], "highlights": [quote]}}
+
+    assert drafts.validate_draft(draft("新設備開始交貨。客戶已經用上了。\n\n下一批在路上。"), source) \
+        == "新設備開始交貨。客戶已經用上了\n\n下一批在路上"
+    assert drafts.validate_draft(draft("分析師 Siegel 講得很直接：新設備開始交貨"), source) \
+        == "分析師 Siegel 說，新設備開始交貨"
+    assert drafts.validate_draft(draft("營收30 ～40億，主席講得更直接，到  40億就飽和"), source) \
+        == "營收30～40億，主席說，到40億就飽和"
+
+
+def test_cached_verdicts_are_free_and_new_ones_are_bounded(tmp_path, monkeypatch):
+    articles = []
+    for index in range(drafts.MAX_PAID_JEV + 3):
+        item = copy.deepcopy(article(str(index)))
+        item["url"] += str(index)
+        item["paragraphs"][0]["text"] += str(index)
+        articles.append(item)
+    selector = Mock(return_value=answer(0.1))  # every article rejected
+    monkeypatch.setattr(drafts, "jev", selector)
+    monkeypatch.setattr(drafts, "write", Mock(side_effect=AssertionError("no writer call")))
+    first = drafts.run({"articles": articles}, tmp_path, as_of=NOW, select_with_jev=True)
+    assert selector.call_count == drafts.MAX_PAID_JEV
+    assert list(first["skipped"].values()).count("jev_budget") == 3
+    second = drafts.run({"articles": articles}, tmp_path, as_of=NOW, select_with_jev=True)
+    assert selector.call_count == drafts.MAX_PAID_JEV + 3  # the rest, with the first batch from cache
+    assert "jev_budget" not in second["skipped"].values() and second["draft"] is None
+
+
+def test_evidence_comes_from_the_quotes_not_the_writers_numbering():
+    source = article() | {"paragraphs": [{"id": "0", "text": "Background that nobody quoted. " * 6},
+                                          {"id": "1", "text": "A named customer deployed a new product. " * 6}]}
+    quote = "A named customer deployed a new product."
+    draft = {"post": "客戶開始用新產品", "evidence_ids": ["45", "46"], "highlights": [quote]}
+    assert drafts.evidence_ids(draft, source) == ["1"]          # invented IDs ignored
+    assert drafts.validate_draft({"draft": draft}, source) == "客戶開始用新產品"
+    assert drafts.evidence_ids(draft | {"evidence_ids": ["0"]}, source) == ["0", "1"]  # a real ID is kept

@@ -9,6 +9,7 @@ import { useAppStore } from '@/store/useAppStore';
 import { SaveCheck } from '@/components/financial/SaveCheck';
 import { formatDate } from '@/lib/date';
 import { cn } from '@/lib/utils';
+import { isCardBodyTap } from '@/lib/cardTap';
 import { windowReturnsKey } from '@/hooks/useTickerWindowReturns';
 import type { PickWindowReturns } from '@/services/types';
 import type { ThemeCardData, ThemeMention } from '@/services/api/themeViews';
@@ -60,7 +61,10 @@ export const ThemeCard: React.FC<ThemeCardProps> = ({ card, windowsMap, podcastI
   const averages = METRICS.map((m) => ({ ...m, value: mean(rows.map((r) => r.windows?.[m.key])) }));
 
   return (
-    <Card className={cn('p-4', className)}>
+    <Card
+      className={cn('cursor-pointer p-4', className)}
+      onClick={(e) => { if (isCardBodyTap(e)) setOpen((v) => !v); }}
+    >
       <div className="flex items-start gap-3">
         <PodAvatar src={podcastImage} name={card.podcaster} kind="solid" size={36} className="w-9 h-9 rounded-md object-cover shrink-0" />
         <div className="flex-1 min-w-0">
@@ -148,15 +152,22 @@ export const ThemeCard: React.FC<ThemeCardProps> = ({ card, windowsMap, podcastI
         </>
       )}
 
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        aria-expanded={open}
-        className="flex min-h-10 items-center gap-1 text-xs text-accent-info mt-1 hover:underline"
-      >
-        {open ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-        {open ? '收合' : card.mentions.length > 1 ? `連續提及 ${card.mentions.length} 集` : '查看這一集'}
-      </button>
+      {/* The whole card is the tap target; the chevron only shows which way it goes
+          and keeps the toggle reachable from the keyboard. */}
+      <div className="mt-1 flex items-center justify-between gap-2">
+        <span className="text-xs text-muted-foreground">
+          {card.mentions.length > 1 ? `連續提及 ${card.mentions.length} 集` : ''}
+        </span>
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          aria-expanded={open}
+          aria-label={open ? '收合' : '展開'}
+          className="flex h-6 w-10 items-center justify-center rounded text-muted-foreground/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+        >
+          {open ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+        </button>
+      </div>
 
       {open && (
         <div className="mt-1 pt-3 border-t border-border">

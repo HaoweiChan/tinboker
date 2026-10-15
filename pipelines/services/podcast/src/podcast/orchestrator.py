@@ -12,7 +12,11 @@ from typing import Dict, List, Optional
 from src.pipeline import EpisodeProcessor, PipelineConfig
 from src.pipeline.reconcile import reconcile_show_released_at_ms
 from src.pipeline.steps import initialize_services
-from src.pipeline.utils import required_artifact_urls, retain_episode_audio
+from src.pipeline.utils import (
+    required_artifact_urls,
+    required_episode_artifact_urls,
+    retain_episode_audio,
+)
 
 from .firestore_reprocessor import process_firestore_episode
 
@@ -626,6 +630,8 @@ def _filter_unprocessed_episodes(
                     episode_number=episode.get("episodeNumber"),
                 )
             required = required_urls(episode) if callable(required_urls) else (required_urls or required_artifact_urls())
+            if existing:
+                required = required_episode_artifact_urls(existing, default=required)
             if existing and all(existing.get(f) for f in required):
                 continue
         non_processed.append(episode)

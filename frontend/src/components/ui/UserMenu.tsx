@@ -66,7 +66,7 @@ export const UserMenu: React.FC = () => {
       {/* Avatar Button */}
       <button 
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center justify-center w-10 h-10 rounded-full bg-accent-info border-2 border-border hover:opacity-90 transition shadow-lg overflow-hidden"
+        className="flex items-center justify-center w-10 h-10 rounded-full bg-accent-info border-2 border-border hover:opacity-90 transition overflow-hidden"
         aria-label="User Menu"
       >
         {user.avatar ? (
@@ -78,7 +78,7 @@ export const UserMenu: React.FC = () => {
 
       {/* Dropdown Menu */}
       {isOpen && (
-        <div className="absolute right-0 mt-2 w-64 rounded-xl bg-card border border-border shadow-xl overflow-hidden z-50">
+        <div className="absolute right-0 mt-2 w-64 rounded-lg bg-card border border-border shadow-xl overflow-hidden z-50">
           {/* User Info */}
           <div className="p-4 border-b border-border">
             <div className="font-bold text-foreground text-xl">{user.name}</div>

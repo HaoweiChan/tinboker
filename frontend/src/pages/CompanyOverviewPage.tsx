@@ -15,19 +15,19 @@ export const CompanyOverviewPage: React.FC<CompanyOverviewPageProps> = ({
 }) => {
   return (
     <div className="w-full max-w-xl mx-auto space-y-6">
-      <Card className="w-full shadow-lg border border-border/60 bg-card/95">
+      <Card className="w-full border border-border/60 bg-card/95">
         <StockCard company={stockData} />
       </Card>
 
-      <Card className="w-full shadow-lg border border-border/60 bg-card/95 overflow-hidden p-0">
+      <Card className="w-full border border-border/60 bg-card/95 overflow-hidden p-0">
         <PriceChart data={stockData.chartData} ticker={stockData.ticker} />
       </Card>
 
-      <Card className="w-full shadow-lg border border-border/60 bg-card/95">
+      <Card className="w-full border border-border/60 bg-card/95">
         <MetricsPanel company={stockData} />
       </Card>
 
-      <Card className="w-full shadow-lg border border-border/60 bg-card/95">
+      <Card className="w-full border border-border/60 bg-card/95">
         <h3 className="text-xl font-semibold mb-3 text-foreground">
           About
         </h3>

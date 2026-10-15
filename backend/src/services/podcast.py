@@ -2781,11 +2781,20 @@ class PodcastService:
     ) -> Episode:
         """Patch allowed fields directly in Firestore (dev debug editor)."""
         from fastapi import HTTPException
+        updates = dict(updates)
+        invalidate_caches = updates.pop("invalidate_caches", False)
+        if type(invalidate_caches) is not bool:
+            raise HTTPException(status_code=422, detail="invalidate_caches must be boolean")
+        clear_summary_image = updates.pop("clear_summary_image", False)
+        if type(clear_summary_image) is not bool:
+            raise HTTPException(status_code=422, detail="clear_summary_image must be boolean")
         allowed = {"summary_content", "key_insights", "related_tickers", "tags"}
         bad_keys = set(updates.keys()) - allowed
         if bad_keys:
             raise HTTPException(status_code=422, detail=f"Fields not patchable: {', '.join(sorted(bad_keys))}")
-        if not updates:
+        if clear_summary_image:
+            updates.update({"summary_image": None, "summary_image_url": None, "summary_image_public_url": None})
+        if not updates and not invalidate_caches:
             raise HTTPException(status_code=422, detail="No fields to update")
         episode_dict = self.firestore_service.get_document("episodes", episode_id)
         if not episode_dict:
@@ -2793,12 +2802,13 @@ class PodcastService:
         if episode_dict.get("podcast_name") != podcast_name:
             raise HTTPException(status_code=404, detail=f"Episode {episode_id} not found for podcast {podcast_name}")
         try:
-            await self._write_episode_fields(episode_id, updates)
+            if updates:
+                await self._write_episode_fields(episode_id, updates)
             await self._invalidate_episode_cache(podcast_name, episode_id)
             # When related_tickers change (e.g. a content regen), the per-ticker
             # sentiment cards are served from a separate ticker_insights:* cache the
             # episode bust above does NOT cover — clear it too.
-            if "related_tickers" in updates:
+            if invalidate_caches or "related_tickers" in updates:
                 await self._invalidate_ticker_insight_cache(podcast_name)
             # Refresh the Cloudflare edge for this env so the patched content shows
             # immediately instead of waiting out s-maxage (≤1h). Best-effort.
@@ -2862,10 +2872,14 @@ class PodcastService:
         detail-page sentiment cards stay stale for up to INSIGHT_TTL (2h).
         Best-effort: a cache hiccup must not fail the write.
         """
+        from src.services.insight_service import _scope_tag
+
+        scope = _scope_tag()
         for pattern in (
-            "ticker_insights:by_ticker:*",
-            f"ticker_insights:by_podcaster:{podcast_name}:*",
-            "ticker_insights:trending:*",
+            f"ticker_insights:by_ticker:{scope}:*",
+            f"ticker_insights:by_podcaster:v2:{scope}:{podcast_name}:*",
+            f"ticker_insights:recent:v2:{scope}:*",
+            f"ticker_insights:trending:{scope}:*",
         ):
             try:
                 await cache_delete_pattern(pattern)

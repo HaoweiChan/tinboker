@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from typing import List, Optional, Any
 
 import httpx
-from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, Response, UploadFile
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 
@@ -24,6 +24,7 @@ from src.database.postgres import get_session
 from src.services import (facebook_publisher, promo_publisher, substack_publisher,
                           threads_publisher, vocus_publisher)
 from src.services.content_source_service import social_enabled_for
+from src.services.news_drafts import NewsDraftBody, draft_state, save_news_draft
 from src.services.gcs_content import GCSContentService, media_url
 from src.services.syndication_markdown import (
     build_syndication_body, hook_title, is_historic, podcast_short_name, syndication_excerpt, syndication_title,
@@ -36,7 +37,7 @@ from src.services.substack_insights_service import SubstackInsightsService
 from src.services.threads_insights_service import ThreadsInsightsService, history_sync_status
 from src.services.threads_insights_service import ThreadsAPIError
 from src.services.vocus_insights_service import VocusInsightsService
-from src.services import social_formats, social_ledger, threads_comments_service
+from src.services import market_moves, social_formats, social_ledger, threads_comments_service
 
 _MAX_MEDIA_BYTES = 200 * 1024 * 1024  # 200 MB per file
 _gcs = GCSContentService()
@@ -263,6 +264,23 @@ async def threads_formats_preview(_: AdminAccess = Depends(get_admin_access)):
     """What the rotation would post at the next slot, plus every format's draft for
     today (caption, image URL, link) and its cooldown state. Nothing is posted."""
     return await social_formats.preview()
+
+
+@router.get("/market-moves/preview")
+async def threads_market_moves_preview(
+    market: str = Query(..., pattern=r"^[A-Za-z]{2}$", description="TW, US, JP or KR"),
+    lane: str = Query("index", pattern=r"^(index|stock|theme)$",
+                      description="Indices, the market's giants, or TinBoker themes"),
+    force: bool = Query(False, description="Draft the lead instrument even below the threshold"),
+    _: AdminAccess = Depends(get_admin_access),
+):
+    """The intraday move scan for one market's lane right now — each instrument's % / sigma / z, and
+    the post (text, card URL, reason + sources) it would make. Ignores the time window
+    and posts nothing; the card URL can be opened to see the image."""
+    try:
+        return await market_moves.preview(market, lane=lane, force=force)
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"Unknown market {market}") from None
 
 
 @router.get("/insights/by-format")
@@ -904,6 +922,9 @@ def _marp_size(marp_markdown: str) -> str:
 # everything; media is written to the VPS media store here and handed to Meta as a
 # public URL at publish time (P5: GCS is gone, so is signing).
 promo_router = APIRouter(prefix="/api/admin/promo", tags=["admin", "social"])
+# Uploading media and reading/saving drafts also accept TINBOKER_SOCIAL_TOKEN, so an agent
+# session can leave a promo ready for review. Publish, schedule and delete stay admin-only:
+# a service token can never put a post live.
 
 
 class PromoMedia(BaseModel):
@@ -946,10 +967,21 @@ def _safe_extension(ctype: str) -> str:
     return ext
 
 
+@promo_router.get("/news-drafts/state")
+async def news_draft_state(response: Response, _: AdminAccess = Depends(get_social_access)):
+    response.headers["Cache-Control"] = "private, no-store"
+    return await asyncio.to_thread(draft_state)
+
+
+@promo_router.post("/news-drafts")
+async def create_news_draft(body: NewsDraftBody, _: AdminAccess = Depends(get_social_access)):
+    return await asyncio.to_thread(save_news_draft, body)
+
+
 @promo_router.post("/media")
 async def upload_promo_media(
     file: UploadFile = File(...),
-    _: AdminAccess = Depends(get_admin_access),
+    _: AdminAccess = Depends(get_social_access),
 ):
     """Upload one image/video for a promo post; returns its type + its public URL.
 
@@ -1053,7 +1085,7 @@ async def _resign_media(stored: list) -> list:
 
 
 @promo_router.get("/drafts")
-def list_promo_drafts(_: AdminAccess = Depends(get_admin_access), db: Session = Depends(get_session)):
+def list_promo_drafts(_: AdminAccess = Depends(get_social_access), db: Session = Depends(get_session)):
     """List saved promo drafts (metadata only; newest first)."""
     rows = db.query(PromoDraft).order_by(PromoDraft.updated_at.desc()).all()
     return {"drafts": [
@@ -1063,19 +1095,19 @@ def list_promo_drafts(_: AdminAccess = Depends(get_admin_access), db: Session = 
             "media_count": len(r.media or []), "comment_count": len(r.comments or []),
             "platforms": r.platforms or [],
         }
-        for r in rows
+        for r in rows if not (r.news_source or {}).get("deleted")
     ]}
 
 
 @promo_router.get("/drafts/{draft_id}")
 async def get_promo_draft(
     draft_id: int,
-    _: AdminAccess = Depends(get_admin_access),
+    _: AdminAccess = Depends(get_social_access),
     db: Session = Depends(get_session),
 ):
     """One draft, with each stored media path resolved to a fetchable URL."""
     row = db.query(PromoDraft).filter(PromoDraft.id == draft_id).first()
-    if not row:
+    if not row or (row.news_source or {}).get("deleted"):
         raise HTTPException(status_code=404, detail="Draft not found")
     return {
         "id": row.id, "name": row.name, "text": row.text or "",
@@ -1088,7 +1120,7 @@ async def get_promo_draft(
 @promo_router.post("/drafts", status_code=201)
 def create_promo_draft(
     body: PromoDraftBody,
-    admin: AdminAccess = Depends(get_admin_access),
+    admin: AdminAccess = Depends(get_social_access),
     db: Session = Depends(get_session),
 ):
     """Save a new promo draft. Returns its id."""
@@ -1112,14 +1144,14 @@ def create_promo_draft(
 def update_promo_draft(
     draft_id: int,
     body: PromoDraftBody,
-    admin: AdminAccess = Depends(get_admin_access),
+    admin: AdminAccess = Depends(get_social_access),
     db: Session = Depends(get_session),
 ):
     """Overwrite an existing draft."""
     if body.poll is not None:
         raise HTTPException(status_code=422, detail="Native polls are supported only for episode posts")
     row = db.query(PromoDraft).filter(PromoDraft.id == draft_id).first()
-    if not row:
+    if not row or (row.news_source or {}).get("deleted"):
         raise HTTPException(status_code=404, detail="Draft not found")
     row.name = (body.name or "").strip() or "未命名草稿"
     row.text = body.text or ""
@@ -1139,9 +1171,14 @@ def delete_promo_draft(
 ):
     """Delete a draft."""
     row = db.query(PromoDraft).filter(PromoDraft.id == draft_id).first()
-    if not row:
+    if not row or (row.news_source or {}).get("deleted"):
         raise HTTPException(status_code=404, detail="Draft not found")
-    db.delete(row)
+    if row.news_source:
+        # Publishing deletes its draft too; keep immutable identity for dedup and the daily cap.
+        row.news_source = {**row.news_source, "deleted": True}
+        row.text, row.media, row.comments = "", [], []
+    else:
+        db.delete(row)
     db.commit()
 
 

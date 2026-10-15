@@ -843,3 +843,38 @@ async def test_publish_recent_excludes_ineligible_and_empty_text_from_ranking(mo
         {"episode_id": "eligible", "score": 0.7}, {"episode_id": "no_text", "score": None},
         {"episode_id": "malformed", "score": None},
     ]
+
+
+@pytest.mark.asyncio
+async def test_publish_retries_media_not_found(monkeypatch):
+    # 2026-10-10: a FINISHED reply container still 400'd with subcode 4279009 on publish.
+    service = ThreadsService(access_token="token", user_id="123")
+    not_found = {"error": {"code": 24, "error_subcode": 4279009}}
+
+    class Response:
+        def __init__(self, status_code, payload):
+            self.status_code, self._payload = status_code, payload
+        def json(self):
+            return self._payload
+
+    class Client:
+        def __init__(self, replies):
+            self.replies, self.calls = iter(replies), 0
+        async def post(self, url, *, data):
+            self.calls += 1
+            return next(self.replies)
+
+    monkeypatch.setattr("src.services.threads_service.asyncio.sleep", lambda s: _noop())
+    client = Client([Response(400, not_found), Response(400, not_found), Response(200, {"id": "m1"})])
+    assert await service._publish_container(client, "c1") == "m1"
+    assert client.calls == 3
+
+    other = Client([Response(400, {"error": {"code": 10}}), Response(200, {"id": "m2"})])
+    with pytest.raises(ThreadsError):
+        await service._publish_container(other, "c1")
+    assert other.calls == 1
+
+    stuck = Client([Response(400, not_found)] * 4)
+    with pytest.raises(ThreadsError, match="4279009"):
+        await service._publish_container(stuck, "c1")
+    assert stuck.calls == 4

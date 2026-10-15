@@ -8,6 +8,7 @@ offline under test.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Any, Callable
 
@@ -88,4 +89,35 @@ def run(
             print(f"  ⚠ article failed ({article.url}): {exc}")
 
     print(summary)
+    try:
+        from .drafts import stage_news_draft
+
+        stage_news_draft(repo, entries)
+    except Exception as exc:  # Drafting must also run after partial ingestion failures.
+        # Only fixed validation messages and sanitized failure summaries reach the log.
+        message = str(exc)
+        safe = message in {
+            "Source dates must include a timezone",
+            "An HTTPS source URL is required",
+            "as_of must include a timezone",
+            "Article IDs must be nonempty unique strings",
+            "Jev returned an unexpected answer map",
+            "Jev returned an invalid probability",
+            "Writer returned an invalid draft or evidence ID",
+            "Writer returned no Chinese text",
+            "Writer returned disallowed prose",
+            "Writer returned a highlight that is not a source quote",
+            "Writer returned a post over the Threads length limit",
+            "Choose Jev selection or an explicit article, not both",
+            "A writer model is required",
+            "Run call/input budget exceeded",
+            "Requested article did not pass the prefilter",
+        } or re.fullmatch(
+            r"(?:jev|writer) failed \((?:missing_openrouter_api_key|provider_http_error|"
+            r"timeout|invalid_provider_response|request_failed|incomplete_request)"
+            r"(?::[A-Za-z0-9_]+)*\); inspect configuration before retrying",
+            message,
+        ) or re.fullmatch(r"screenshot failed \([a-z_]+\)", message)
+        detail = message[:200] if safe else "details withheld (may contain request data)"
+        print(f"Warning: news draft skipped ({type(exc).__name__}): {detail}")
     return summary

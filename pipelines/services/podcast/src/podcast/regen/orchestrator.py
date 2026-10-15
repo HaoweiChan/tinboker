@@ -19,13 +19,17 @@ Postgres until ``commit``.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
 import tempfile
 import time
+from copy import deepcopy
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
+from zoneinfo import ZoneInfo
 
 from shared.db import libpq_url
 
@@ -422,6 +426,8 @@ def _apply(step: str, output: Any, state: dict[str, Any]) -> list[str]:
         # ponytail: if ticker runs before writer, related_tickers isn't derived yet
         # and canonicalization is skipped; resubmit ticker (or ticker_marp) to refresh.
         state.update(convert_marp_ticker(state))
+        if state.get("marp_slides"):
+            state.update(convert_marp(state))
     elif step == STEP_MARP:
         state.update(marp_writer.postprocess(output, state))
         state.update(convert_marp(state))
@@ -470,14 +476,89 @@ def _next_pointer(step: str) -> dict[str, Any]:
     }
 
 
-def _prompt_payload(step: str, state: dict[str, Any]) -> dict[str, Any]:
+def _parse_publication_datetime(raw: Any) -> datetime | None:
+    if raw in (None, "", 0) or isinstance(raw, bool):
+        return None
+    if isinstance(raw, (int, float)) and not isinstance(raw, bool):
+        value = float(raw)
+        seconds = value / 1000 if abs(value) >= 10_000_000_000 else value
+        try:
+            return datetime.fromtimestamp(seconds, tz=timezone.utc)
+        except (OverflowError, OSError, ValueError):
+            return None
+    elif isinstance(raw, str):
+        value = raw.strip()
+        try:
+            # Also accept numeric timestamps serialized as strings by older drafts.
+            numeric = float(value)
+            seconds = numeric / 1000 if abs(numeric) >= 10_000_000_000 else numeric
+            return datetime.fromtimestamp(seconds, tz=timezone.utc)
+        except (ValueError, OverflowError, OSError):
+            try:
+                published = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            except ValueError:
+                return None
+            if published.tzinfo is None:
+                # PodcastEpisode.resolve_publish_ms interprets naive created_time as UTC.
+                published = published.replace(tzinfo=timezone.utc)
+            return published
+    else:
+        return None
+
+
+def _publication_prompt_metadata(draft: dict[str, Any]) -> dict[str, str] | None:
+    """Return the canonical local publication date, trying launch time then legacy time."""
+    published = _parse_publication_datetime(draft.get("podcast_launch_time"))
+    if published is None:
+        published = _parse_publication_datetime(draft.get("created_time"))
+    if published is None:
+        return None
+    local = published.astimezone(ZoneInfo("Asia/Taipei"))
+    return {
+        "date_iso": local.date().isoformat(),
+        "display_date": local.strftime("%Y.%m.%d"),
+        "published_at": local.isoformat(),
+        "timezone": "Asia/Taipei",
+    }
+
+
+def _prompt_messages(
+    step: str,
+    state: dict[str, Any],
+    publication_metadata: dict[str, str] | None = None,
+) -> list[dict[str, str]]:
+    messages = _build_messages(step, state)
+    if step in {STEP_TICKER, STEP_MARP}:
+        if publication_metadata:
+            date_context = (
+                "\n\nAuthoritative episode publication metadata (use this; do not infer from transcript):\n"
+                f"- date_iso: {publication_metadata['date_iso']}\n"
+                f"- display_date: {publication_metadata['display_date']}\n"
+                f"- published_at: {publication_metadata['published_at']}\n"
+                f"- timezone: {publication_metadata['timezone']}\n"
+                "- Use date_iso for publication_date; use display_date on the Marp cover.\n"
+            )
+        else:
+            date_context = (
+                "\n\nEpisode publication metadata is unavailable in the saved episode record. "
+                "Do not guess a publication date.\n"
+            )
+        messages[1] = {**messages[1], "content": messages[1]["content"] + date_context}
+    return messages
+
+
+def _prompt_payload(
+    step: str,
+    state: dict[str, Any],
+    publication_metadata: dict[str, str] | None = None,
+) -> dict[str, Any]:
     """The full rendered prompt for ``step`` — system + user + the output contract.
 
     The two messages carry the (large) transcript/events payload, so this is only
     returned by ``start`` (extractor) and ``get_role_prompt`` (on demand). Note the
     redundant ``messages`` array was dropped — ``system``/``user`` are the contents.
     """
-    messages = _build_messages(step, state)
+    messages = _prompt_messages(step, state, publication_metadata)
     return {
         "step": step,
         "role": _STEP_ROLE[step],
@@ -499,8 +580,12 @@ def _assemble(draft: dict[str, Any]) -> dict[str, Any]:
     completed = set(draft["completed"])
     state = draft["state"]
     payload: dict[str, Any] = {}
+    if draft.get("generation_metadata"):
+        payload["generation_metadata"] = draft["generation_metadata"]
 
     if STEP_WRITER in completed:
+        payload["social_thread"] = None
+        payload["social_cards"] = []
         payload["summary_content"] = state.get("markdown_report", "")
         # Same tag↔sector dedup as run_pipeline's assembly (graph.py) — done here,
         # not in derive_tags_tickers, because sector exposures are re-derived after
@@ -519,6 +604,7 @@ def _assemble(draft: dict[str, Any]) -> dict[str, Any]:
     if STEP_KEY_INSIGHTS in completed:
         payload["key_insights"] = state.get("key_insights", [])
     if STEP_EXTRACTOR in completed:
+        payload["macro_claims"] = []
         payload["events_markdown"] = state.get("events_markdown", "")
         for field in (
             "skipped_segments",
@@ -594,15 +680,21 @@ def _upload_regen_content(
     couldn't run (storage unavailable or the upload itself failed), so ``commit`` can
     surface it as a warning instead of silently leaving the page on the old content.
     """
+    cleared_urls: dict[str, Any] = {}
+    for field in _GCS_UPLOAD_KWARGS:
+        if field in payload and not payload[field]:
+            stem = "summary" if field == "summary_content" else field
+            cleared_urls[f"{stem}_url"] = None
+            cleared_urls[f"{stem}_public_url"] = None
     upload_kwargs: dict[str, Any] = {
         kwarg: payload[field]
         for field, kwarg in _GCS_UPLOAD_KWARGS.items()
         if payload.get(field)
     }
-    if payload.get("ticker_insights"):
+    if "ticker_insights" in payload:
         upload_kwargs["ticker_insights_data"] = payload["ticker_insights"]
     if not upload_kwargs:
-        return {}, None
+        return cleared_urls, None
 
     try:
         svc = _gcs_storage_service()
@@ -623,7 +715,17 @@ def _upload_regen_content(
             f"Media write failed ({exc}); the page will keep serving the OLD "
             "marp/events content until the blob is re-uploaded."
         )
-    return {k: urls[k] for k in _GCS_URL_FIELDS if urls.get(k)}, None
+    expected = {
+        "summary_content": "summary_url",
+        "events_markdown_content": "events_markdown_url",
+        "marp_markdown_content": "marp_markdown_url",
+        "ticker_marp_markdown_content": "ticker_marp_markdown_url",
+        "ticker_insights_data": "ticker_insights_url",
+    }
+    missing = [field for kwarg, field in expected.items() if kwarg in upload_kwargs and not urls.get(field)]
+    if missing:
+        return {}, f"Media write failed — missing artifact URLs: {', '.join(missing)}"
+    return {**cleared_urls, **{k: urls[k] for k in _GCS_URL_FIELDS if urls.get(k)}}, None
 
 
 def _manual_cache_commands(
@@ -638,7 +740,7 @@ def _manual_cache_commands(
         "#    The endpoint is admin-gated — pass the content-writer service token or it 403s:",
         f"curl -X PATCH '{api}/api/podcast/{podcast_name}/episodes/{episode_id}' "
         "-H \"Authorization: Bearer $TINBOKER_WRITE_TOKEN\" "
-        "-H 'Content-Type: application/json' --data '{\"summary_content\":\"<the new summary>\"}'",
+        "-H 'Content-Type: application/json' --data '{\"invalidate_caches\":true}'",
     ]
     if has_tickers:
         cmds.append(
@@ -716,7 +818,7 @@ def find_candidates(
     return {"count": len(out), "candidates": out}
 
 
-def start(podcast_name: str, episode_id: str) -> dict[str, Any]:
+def start(podcast_name: str, episode_id: str, allowed_providers: list[str] | None = None) -> dict[str, Any]:
     """Load a transcribed episode and open a working draft; return the first prompt."""
     from src.podcast.exporters.ticker_insights import episode_publish_time
     from src.service import postgres_mirror_reader
@@ -749,7 +851,11 @@ def start(podcast_name: str, episode_id: str) -> dict[str, Any]:
     episode_title = doc.get("episode_title") or doc.get("title") or "Episode"
     source = doc.get("podcast_name") or "Podcast"
 
+    if allowed_providers is not None and (not isinstance(allowed_providers, list) or any(p not in {"local", "openrouter"} for p in allowed_providers)):
+        raise RegenError("allowed_providers must contain only local or openrouter")
     draft = {
+        "allowed_providers": allowed_providers,
+        "generation_metadata": doc.get("generation_metadata") or {"version": 1, "roles": {}, "auxiliary_calls": []},
         "episode_id": episode_id,
         "podcast_name": podcast_name,
         "episode_title": episode_title,
@@ -760,6 +866,7 @@ def start(podcast_name: str, episode_id: str) -> dict[str, Any]:
         # real mention date, not the regen-run date. Captured at draft time from the
         # episode doc so commit() doesn't need to re-read it.
         "podcast_launch_time": episode_publish_time(doc),
+        "transcript_url": doc.get("transcript_url"),
         "state": {
             "sentences": sentences,
             "source": source,
@@ -802,19 +909,19 @@ def start(podcast_name: str, episode_id: str) -> dict[str, Any]:
 def get_prompt(episode_id: str, step: str) -> dict[str, Any]:
     """Return the rendered system+user prompt for ``step`` (the agent fulfills it)."""
     step = _normalize_step(step)
-    draft = _load(episode_id)
+    draft = deepcopy(_load(episode_id))
     prereq = _STEP_PREREQ[step]
     if prereq and prereq not in draft["completed"]:
         raise RegenError(
             f"Step '{step}' needs '{prereq}' first. Submit '{prereq}' before requesting this prompt."
         )
-    return _prompt_payload(step, draft["state"])
+    return _prompt_payload(step, draft["state"], _publication_prompt_metadata(draft))
 
 
-def submit(episode_id: str, step: str, output_json: Any) -> dict[str, Any]:
+def submit(episode_id: str, step: str, output_json: Any, generation_metadata: dict[str, Any] | None = None) -> dict[str, Any]:
     """Store the agent's output for ``step``, run the glue, return what's next."""
     step = _normalize_step(step)
-    draft = _load(episode_id)
+    draft = deepcopy(_load(episode_id))
     prereq = _STEP_PREREQ[step]
     if prereq and prereq not in draft["completed"]:
         raise RegenError(f"Step '{step}' needs '{prereq}' first.")
@@ -832,9 +939,61 @@ def submit(episode_id: str, step: str, output_json: Any) -> dict[str, Any]:
             + f"\nSee the step's output_schema/example (get_role_prompt(episode_id, '{step}'))."
         )
 
-    warnings = _apply(step, output_json, draft["state"])
+    if generation_metadata is not None and not isinstance(generation_metadata, dict):
+        raise RegenError("generation_metadata must be an object")
+    metadata = dict(generation_metadata or {"source": "unknown"})
+    if set(metadata) - {"source", "provider", "model", "generated_at"}:
+        raise RegenError("generation_metadata accepts only source/provider/model/generated_at; auxiliary calls are server-recorded")
+    if metadata.get("source") not in {"generated", "manual", "reused", "unknown"}:
+        raise RegenError("generation_metadata source must be generated, manual, reused, or unknown")
+    if metadata["source"] == "generated":
+        if not all(isinstance(metadata.get(k), str) and metadata[k].strip() for k in ("provider", "model", "generated_at")):
+            raise RegenError("generated metadata requires actual provider, model and generated_at")
+    if metadata.get("generated_at"):
+        try:
+            parsed = datetime.fromisoformat(metadata["generated_at"].replace("Z", "+00:00"))
+            if parsed.tzinfo is None:
+                raise ValueError("timezone required")
+        except (ValueError, TypeError) as exc:
+            raise RegenError("generation_metadata generated_at must be an ISO timestamp with timezone") from exc
+    metadata.update({
+        "attestation": "caller" if generation_metadata else "unknown",
+        "prompt_sha256": hashlib.sha256(json.dumps(
+            _prompt_messages(step, draft["state"], _publication_prompt_metadata(draft)),
+            ensure_ascii=False,
+            sort_keys=True,
+        ).encode()).hexdigest(),
+        "output_sha256": hashlib.sha256(json.dumps(output_json, ensure_ascii=False, sort_keys=True).encode()).hexdigest(),
+    })
+    if step == STEP_TICKER_MARP:
+        metadata = {"source": "deterministic"}
+    from ..content_builder.llm import generation_context
+    calls: list[dict[str, Any]] = []
+    with generation_context(draft.get("allowed_providers"), calls):
+        warnings = _apply(step, output_json, draft["state"])
+    provenance = draft.setdefault("generation_metadata", {"version": 1, "roles": {}, "auxiliary_calls": []})
+    # Resubmission changes downstream prompts: require their outputs again.
+    invalidated = {step}
+    while True:
+        descendants = {s for s, parent in _STEP_PREREQ.items() if parent in invalidated}
+        if descendants <= invalidated:
+            break
+        invalidated.update(descendants)
+    invalidated.discard(step)
+    stale = invalidated.intersection(draft["completed"])
+    pending = set(draft.get("invalidated_steps", [])) | stale
+    pending.discard(step)
+    draft["invalidated_steps"] = sorted(pending)
+    draft["completed"] = [s for s in draft["completed"] if s not in stale]
+    for stale_step in stale:
+        provenance.setdefault("roles", {}).pop(stale_step, None)
+    provenance.setdefault("roles", {})[step] = metadata
+    provenance.setdefault("auxiliary_calls", []).extend(calls)
     if step not in draft["completed"]:
         draft["completed"].append(step)
+    stored = _load(episode_id)
+    stored.update(draft)
+    draft = stored
     _save(draft)
 
     ready = _ready_steps(draft["completed"])
@@ -879,6 +1038,8 @@ def preview(episode_id: str) -> dict[str, Any]:
         "related_tickers": payload.get("related_tickers", []),
         "sector_exposures": payload.get("sector_exposures", []),
         "unresolved_market_trends": payload.get("unresolved_market_trends", []),
+        "generation_metadata": payload.get("generation_metadata"),
+        "allowed_providers": draft.get("allowed_providers"),
         "ticker_insight_count": ticker_count,
         "marp_chars": len(payload.get("marp_markdown", "")),
         "ticker_marp_chars": len(payload.get("ticker_marp_markdown", "")),
@@ -890,12 +1051,15 @@ def commit(
     episode_id: str,
     render_cards: bool = False,
     notify_platform: bool = True,
+    allow_missing_audio: bool = False,
 ) -> dict[str, Any]:
     """Persist the regenerated content through the pipeline's existing write paths."""
     draft = _load(episode_id)
     payload = _assemble(draft)
-    if not _doc_update(payload) and not payload.get("ticker_insights"):
+    if not draft["completed"]:
         raise RegenError("Nothing to commit — no steps have been submitted yet.")
+    if draft.get("invalidated_steps"):
+        raise RegenError(f"Resubmit invalidated steps before commit: {draft['invalidated_steps']}")
     # Hard slide-freshness guard: a new summary with the old deck is exactly the
     # EP677 incident. Partial regens that don't touch the writer stay allowed.
     if STEP_WRITER in draft["completed"] and STEP_MARP not in draft["completed"]:
@@ -904,38 +1068,62 @@ def commit(
             "would leave the episode slides describing the OLD summary. Submit "
             "'marp_writer' first (get_role_prompt(episode_id, 'marp_writer'))."
         )
+    if allow_missing_audio and render_cards:
+        raise RegenError("allow_missing_audio requires render_cards=False for the explicit no-audio/no-image policy.")
+    if allow_missing_audio and not set(REQUIRED_STEPS).issubset(set(draft["completed"])):
+        raise RegenError("allow_missing_audio requires all five required regen roles to be complete.")
+    if allow_missing_audio:
+        from src.pipeline.utils import has_complete_regen_provenance
+
+        summary = payload.get("summary_content")
+        transcript_url = draft.get("transcript_url")
+        if not transcript_url:
+            # Legacy drafts are read-only; resolve their existing source URL without
+            # mutating the approved draft file or in-memory session.
+            from src.service.postgres_mirror_reader import get_episode_by_id
+
+            source_doc = get_episode_by_id(episode_id)
+            transcript_url = source_doc.get("transcript_url") if source_doc else None
+        if not transcript_url:
+            raise RegenError("allow_missing_audio requires an existing transcript_url.")
+        if not isinstance(summary, str) or not summary.strip() or is_placeholder_summary(summary):
+            raise RegenError("allow_missing_audio requires a real regenerated summary.")
+        if not has_complete_regen_provenance(draft.get("generation_metadata")):
+            raise RegenError("allow_missing_audio requires valid generated provenance for all five required regen roles.")
 
     _require_live_media_root()
 
     report: dict[str, Any] = {"episode_id": episode_id, "warnings": []}
 
-    # 1. Episode-doc merge (summary_content, key_insights, tags, related_tickers,
-    #    marp/events markdown, social_cards) — same fields the debug PATCH writes.
-    doc_update = _doc_update(payload)
-    if doc_update:
-        _write_doc_update(episode_id, doc_update)
-        report["episode_fields_written"] = sorted(doc_update.keys())
-
-    # 1b. Rewrite the URL-served artifacts (marp/events/ticker_marp/summary). The
-    #     backend serves these by hydrating ``*_content`` from ``*_url`` when the inline
-    #     field is empty, so the doc merge above is NOT enough — without this the
-    #     page keeps rendering the OLD slides/events. Overwrite the blobs and repoint
-    #     the doc's ``*_url`` fields at the fresh upload so hydration reads the regen.
+    # Upload and verify every required artifact before changing episode JSON.
     gcs_url_updates, gcs_error = _upload_regen_content(
         episode_id, draft["podcast_name"], payload
     )
     if gcs_error:
-        report["warnings"].append(gcs_error)
+        raise RegenError(gcs_error)
+    doc_update = _doc_update(payload)
+    doc_update.update(gcs_url_updates)
+    if allow_missing_audio:
+        if not gcs_url_updates.get("summary_url"):
+            raise RegenError("allow_missing_audio requires the regenerated summary artifact URL.")
+        doc_update["artifact_completion_policy"] = {
+            "version": 1,
+            "mode": "regen_without_audio_or_image",
+            "required_urls": ["transcript_url", "summary_url"],
+            "intentionally_omitted_urls": ["mp3_url", "summary_image_url"],
+        }
+    if doc_update:
+        _write_doc_update(episode_id, doc_update)
+        report["episode_fields_written"] = sorted(doc_update.keys())
     if gcs_url_updates:
-        _write_doc_update(episode_id, gcs_url_updates)
         report["gcs_content_uploaded"] = sorted(gcs_url_updates.keys())
 
     # 2. Rich ticker sentiment -> firestore_mirror.ticker_insights.
-    if payload.get("ticker_insights"):
+    if STEP_TICKER in draft["completed"]:
         try:
             from src.podcast.exporters.ticker_insights import (
                 build_episode_insight_docs,
-                write_episode_insights_postgres,
+                replace_episode_insights_postgres,
             )
 
             docs = build_episode_insight_docs(
@@ -947,10 +1135,10 @@ def commit(
                 podcast_launch_time=draft.get("podcast_launch_time") or draft.get("created_time"),
             )
             report["ticker_insights_written"] = (
-                write_episode_insights_postgres(episode_id, docs) if docs else 0
+                replace_episode_insights_postgres(episode_id, docs)
             )
-        except Exception as exc:  # noqa: BLE001 — best-effort, never abort the commit
-            report["warnings"].append(f"ticker_insights export failed: {exc}")
+        except Exception as exc:
+            raise RegenError(f"ticker_insights replacement failed: {exc}") from exc
 
     # 3. Refresh the platform caches by replaying the user-visible fields through the
     #    backend's PATCH (the debug-editor write path). That ONE call busts the episode
@@ -963,6 +1151,7 @@ def commit(
         for k in ("summary_content", "key_insights", "related_tickers", "tags")
         if k in payload
     }
+    cached["invalidate_caches"] = True
     base = os.getenv("TINBOKER_PLATFORM_API_URL")
     # The PATCH endpoint is admin-gated (``get_content_write_access``); the regen agent
     # authenticates with the ``TINBOKER_WRITE_TOKEN`` content-writer service token (the
@@ -998,15 +1187,15 @@ def commit(
 
     if cached:
         surfaces = ["episode Redis cache"]
-        if "related_tickers" in cached:
-            surfaces.append("ticker_insights:by_ticker cache")
+        if cached.get("invalidate_caches") or "related_tickers" in cached:
+            surfaces.append("ticker_insights caches (by ticker, by podcaster, recent, trending)")
         surfaces.append("Cloudflare edge (API host)")
         if notified_ok:
             report["cache_refreshed"] = {"via": base, "surfaces": surfaces}
         else:
             report["cache_stale_until_ttl"] = True
             report["manual_invalidation"] = _manual_cache_commands(
-                base, draft["podcast_name"], episode_id, "related_tickers" in cached
+                base, draft["podcast_name"], episode_id, True
             )
 
     # 4. PNG social-card rendering stays in the normal pipeline (needs marp_service

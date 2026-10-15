@@ -374,3 +374,35 @@ def test_postgres_table_lock_orders_tombstone_and_writers():
             conn.execute("DROP SCHEMA IF EXISTS mp3_retention CASCADE")
             conn.execute("DROP TABLE IF EXISTS firestore_mirror.episodes")
             conn.execute("DROP SCHEMA IF EXISTS firestore_mirror")
+
+
+def test_failure_detail_never_leaks_library_messages():
+    from scripts.mp3_retention_guards import _safe_detail
+
+    class Diag:
+        sqlstate = "42501"
+        message_primary = "permission denied for schema mp3_retention"
+
+    class InsufficientPrivilege(Exception):
+        diag = Diag()
+
+    assert _safe_detail(InsufficientPrivilege()) == "InsufficientPrivilege [42501] permission denied for schema mp3_retention"
+
+    try:
+        raise ValueError("postgresql://user:secret@host/db is malformed")
+    except ValueError as exc:
+        assert _safe_detail(exc) == "ValueError"
+
+
+
+def test_failure_detail_shows_sibling_script_messages():
+    from types import SimpleNamespace
+
+    from scripts.mp3_retention_apply import _autocommit_ready
+    from scripts.mp3_retention_guards import _safe_detail
+
+    with pytest.raises(RuntimeError) as exc:
+        _autocommit_ready(SimpleNamespace(autocommit=False))
+    assert _safe_detail(exc.value) == (
+        "RuntimeError: MP3 retirement requires idle autocommit connections"
+    )

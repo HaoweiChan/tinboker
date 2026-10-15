@@ -145,7 +145,7 @@ export const WeeklyPage: React.FC = () => {
                 ) : null; })()}
                 <div className="flex flex-wrap gap-1.5">
                   {data.podcasts.map((p) => (
-                    <Link key={p.name} to={`/podcaster/${encodeURIComponent(p.name)}`} className="text-2xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground hover:text-foreground">
+                    <Link key={p.name} to={`/podcaster/${encodeURIComponent(p.name)}`} className="text-2xs px-2 py-0.5 rounded-lg bg-muted text-muted-foreground hover:text-foreground">
                       {p.name} <strong className="font-mono text-foreground ml-0.5 tabular-nums">{p.episodes}</strong>
                     </Link>
                   ))}

@@ -142,6 +142,7 @@ _IDLE_IN_TRANSACTION_TIMEOUT_MS = 300_000
 
 # Columns added to tables that pre-date them: (table, column, type).
 _PG_BOOT_COLUMNS: list[tuple[str, str, str]] = [
+    ("promo_drafts", "news_source", "JSON"),
     # Billing PR 3b.
     ("subscriptions", "paid_until", "TIMESTAMPTZ"),
     ("subscriptions", "promo_code", "VARCHAR(32)"),
@@ -411,6 +412,10 @@ def create_all_tables():
                 """,
             )
     elif engine.dialect.name == "sqlite":
+        with engine.begin() as conn:
+            cols = {r[1] for r in conn.execute(text("PRAGMA table_info(promo_drafts)"))}
+            if cols and "news_source" not in cols:
+                conn.execute(text("ALTER TABLE promo_drafts ADD COLUMN news_source JSON"))
         with engine.begin() as conn:
             billing_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(subscriptions)"))}
             if "paid_until" not in billing_cols:

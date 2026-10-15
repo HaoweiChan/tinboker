@@ -272,10 +272,15 @@ def _find_new_episodes(
 
 
 def _is_fully_processed(episode: dict[str, Any], feed_episode: dict[str, Any] | None = None) -> bool:
-    from src.pipeline.utils import required_artifact_urls, retain_episode_audio
+    from src.pipeline.utils import (
+        required_artifact_urls,
+        required_episode_artifact_urls,
+        retain_episode_audio,
+    )
 
     published = {**(feed_episode or {}), "released_at_ms": episode.get("released_at_ms")}
     required = required_artifact_urls(store_audio=retain_episode_audio(published, True))
+    required = required_episode_artifact_urls(episode, default=required)
     return all(episode.get(key) for key in required)
 
 

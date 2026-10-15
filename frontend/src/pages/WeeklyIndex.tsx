@@ -101,7 +101,7 @@ export const WeeklyIndex: React.FC = () => {
                 >
                   <div className="flex items-baseline justify-between gap-2">
                     <div className="min-w-0">
-                      <div className="text-2xs font-mono text-muted-foreground tabular-nums">{w.week}{i === 0 && <span className="ml-2 rounded-full bg-primary/15 text-primary px-1.5 py-0.5 text-2xs font-medium">最新</span>}</div>
+                      <div className="text-2xs font-mono text-muted-foreground tabular-nums">{w.week}{i === 0 && <span className="ml-2 rounded-lg bg-primary/15 text-primary px-1.5 py-0.5 text-2xs font-medium">最新</span>}</div>
                       <div className="text-base font-medium mt-0.5 group-hover:text-primary transition-colors">{range(w)}</div>
                     </div>
                     <div className="text-right shrink-0">

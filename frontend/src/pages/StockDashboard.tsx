@@ -329,13 +329,13 @@ const StockHeaderCard: React.FC<{ symbol: string; insights: TickerInsight[]; epi
             {subLines.map((line) => (
               <span key={line.text} className={cn('text-sm text-muted-foreground', line.mono && 'font-mono')}>{line.text}</span>
             ))}
-            <span className={cn('text-xs px-2.5 py-0.5 rounded-full', marketBadge.cls)}>{marketBadge.label}</span>
+            <span className={cn('text-xs px-2.5 py-0.5 rounded-lg', marketBadge.cls)}>{marketBadge.label}</span>
           </div>
           <button
             type="button"
             onClick={() => guard(() => toggleWatchlist(symbol))}
             className={cn(
-              'inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-sm font-medium transition-colors shrink-0',
+              'inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors shrink-0',
               isWatchlisted ? 'bg-card border border-border text-foreground hover:bg-muted' : 'bg-foreground text-background hover:opacity-90',
             )}
           >

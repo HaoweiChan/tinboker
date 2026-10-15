@@ -26,6 +26,7 @@ class Episode(BaseModel):
     released_at_ms: Optional[int] = Field(None, description="True episode publish time (Unix milliseconds), agents-written from the feed's datePublished. Falls back to created_time when absent.")
     number_click: int = Field(default=0, description="Number of clicks")
     num_likes: int = Field(default=0, description="Number of likes")
+    generation_metadata: Optional[dict] = Field(None, description="Per-role caller-attested provenance and server-recorded auxiliary model calls; null for unknown historical runs")
     key_insights: List[str] = Field(default_factory=list, description="Key insights for the episode")
     social_cards: List[dict] = Field(default_factory=list, description="AlphaMemo-style cards (cover + per theme) with image_url, for the Threads thread + episode SEO")
     social_thread: Optional[dict] = Field(None, description="Human-tone Threads copy: {post, comments:[{heading, text}]} — grand-summary post + one comment per theme card. Editable in admin; preferred over the mechanical compose.")

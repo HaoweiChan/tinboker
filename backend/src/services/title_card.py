@@ -43,7 +43,8 @@ def wrap(text: str, px: float, width: float) -> list[str]:
 def title_card_svg(title: str, kicker: str = "", footer: str = "tinboker.com · 非投資建議") -> str:
     font = card_font()
     width = SIZE - 2 * MARGIN
-    title = title.strip()[:MAX_TITLE]
+    title = title.strip()
+    title = title[:MAX_TITLE]
     for px in _SIZES:
         lines = wrap(title, px, width)
         if len(lines) <= _MAX_LINES:

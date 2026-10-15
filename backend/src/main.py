@@ -149,7 +149,11 @@ async def lifespan(app: FastAPI):
         from src.database.postgres import get_session
         from src.services.content_source_service import ContentSourceService
         for session in get_session():
-            inserted = ContentSourceService(session).seed_from_config(ALL_SOURCES)
+            source_service = ContentSourceService(session)
+            repaired = source_service.repair_manny_seed_social_setting()
+            if repaired:
+                print(f"Repaired {repaired} startup-seeded content source social setting(s).")
+            inserted = source_service.seed_from_config(ALL_SOURCES)
             if inserted:
                 print(f"Seeded {inserted} new content source(s).")
             break
@@ -361,6 +365,17 @@ async def lifespan(app: FastAPI):
             print(f"Warning: scheduled posts worker stopped: {e}")
 
     asyncio.create_task(_scheduled_posts_bg())
+
+    # Intraday market-move flash posts. Its own task so a slow tick never delays the
+    # posting slots; idle unless MARKET_MOVE_MARKETS is set (production only).
+    async def _market_moves_bg():
+        try:
+            from src.services.market_moves import run_periodic
+            await run_periodic(interval_seconds=60.0)
+        except Exception as e:
+            print(f"Warning: market moves worker stopped: {e}")
+
+    asyncio.create_task(_market_moves_bg())
 
     # 每日一集 to vocus, once a night, only where DAILY_PICK_AUTOPUBLISH is set (staging).
     async def _daily_pick_bg():

@@ -92,7 +92,13 @@ def test_pipeline_ingests_fixture_articles_end_to_end(tmp_path):
         assert "## News Mentions" in entity.body
 
 
-def test_pipeline_is_best_effort_when_one_article_fails(tmp_path):
+def test_pipeline_is_best_effort_when_one_article_fails(tmp_path, monkeypatch):
+    from unittest.mock import Mock
+
+    from news import drafts
+
+    stage = Mock()
+    monkeypatch.setattr(drafts, "stage_news_draft", stage)
     repo = InMemoryWikiRepository()
 
     def flaky_llm(system: str, user: str) -> dict:
@@ -110,6 +116,8 @@ def test_pipeline_is_best_effort_when_one_article_fails(tmp_path):
     )
     assert summary.ingested == 2
     assert summary.failed == 1
+    stage.assert_called_once()
+    assert stage.call_args.args[0] is repo
     assert len(repo.list_pages(kind="news_article")) == 2
 
 
@@ -129,6 +137,33 @@ def test_pipeline_skips_unchanged_articles_on_rerun(tmp_path):
     assert second.ingested == 0
     assert second.skipped == 3
     assert len(repo.list_pages(kind="news_article")) == 3
+
+
+@pytest.mark.parametrize("message, expected", [
+    ("jev failed (provider_http_error:403); inspect configuration before retrying",
+     "jev failed (provider_http_error:403)"),
+    ("writer failed (timeout); inspect configuration before retrying", "writer failed (timeout)"),
+    ("Jev returned an unexpected answer map", "Jev returned an unexpected answer map"),
+    ("screenshot failed (passage_covered)", "screenshot failed (passage_covered)"),
+    ("Writer returned an invalid draft or evidence ID", "Writer returned an invalid draft or evidence ID"),
+    ("Writer returned no Chinese text: Bearer test-secret", "details withheld"),
+    ("writer failed (request_failed:" + "X" * 250 + "); inspect configuration before retrying",
+     "writer failed (request_failed:"),
+    ('request body: {"Authorization": "Bearer test-secret"}', "details withheld"),
+])
+def test_draft_failure_logs_only_bounded_safe_message(tmp_path, monkeypatch, capsys, message, expected):
+    from unittest.mock import Mock
+
+    from news import drafts
+
+    monkeypatch.setattr(drafts, "stage_news_draft", Mock(side_effect=RuntimeError(message)))
+    run(feeds_path=_feeds_file(tmp_path), repository=InMemoryWikiRepository(),
+        parse=lambda _: SimpleNamespace(entries=[]), detect_conflicts=False)
+    warning = capsys.readouterr().out.splitlines()[-1]
+    assert "news draft skipped (RuntimeError): " + expected in warning
+    assert len(warning.split("(RuntimeError): ", 1)[1]) <= 200
+    assert "test-secret" not in warning
+    assert "Authorization" not in warning
 
 
 if __name__ == "__main__":

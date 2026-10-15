@@ -2909,6 +2909,7 @@ dependencies = [
     { name = "requests" },
     { name = "tinboker-shared" },
     { name = "trafilatura" },
+    { name = "websockets" },
 ]
 
 [package.optional-dependencies]
@@ -2926,6 +2927,7 @@ requires-dist = [
     { name = "requests", specifier = ">=2.31.0" },
     { name = "tinboker-shared", editable = "libs/shared" },
     { name = "trafilatura", specifier = ">=1.8" },
+    { name = "websockets", specifier = ">=13.0" },
 ]
 provides-extras = ["dev"]
 

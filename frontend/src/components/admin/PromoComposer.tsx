@@ -27,7 +27,7 @@ const THREADS_MAX_CHARS = 500;
 const THREADS_MAX_MEDIA = 20;
 const FB_MAX_ALBUM = 10;
 
-const card = 'rounded-xl border border-border bg-card';
+const card = 'rounded-none border-x-0 border-y border-border bg-card sm:rounded-xl sm:border-x';
 const labelCls = 'text-xs font-semibold uppercase tracking-wide text-muted-foreground';
 
 const PLATFORM_LABELS: Record<string, string> = { threads: 'Threads', facebook: 'Facebook' };
@@ -274,7 +274,7 @@ export const PromoComposer: React.FC<PromoComposerProps> = ({ onScheduled }) => 
   return (
     <div className="max-w-2xl space-y-6">
       {/* Drafts */}
-      <div className={`${card} p-4`}>
+      <div className={`${card} p-3 sm:p-4`}>
         <div className={`${labelCls} mb-3`}>草稿 Drafts</div>
         <div className="flex flex-wrap items-center gap-2">
           <select
@@ -328,14 +328,14 @@ export const PromoComposer: React.FC<PromoComposerProps> = ({ onScheduled }) => 
       </div>
 
       {/* Text */}
-      <div className={`${card} p-4`}>
+      <div className={`${card} p-3 sm:p-4`}>
         <div className={`${labelCls} mb-2`}>貼文內容 Post</div>
         <textarea
           value={text}
           onChange={(e) => setText(e.target.value)}
           rows={6}
           placeholder="寫下你的宣傳貼文…（Threads 上限 500 字，Facebook 無實際限制）"
-          className="min-h-[45vh] w-full resize-y rounded-lg border border-input bg-card p-3 text-base text-foreground placeholder:text-muted-foreground focus:border-accent-info focus:outline-none focus:ring-1 focus:ring-accent-info sm:min-h-[18rem]"
+          className="-mx-3 min-h-[45vh] w-[calc(100%+1.5rem)] resize-y rounded-none border-x-0 border-y border-input sm:mx-0 sm:w-full sm:rounded-lg sm:border-x sm:border-y bg-card p-3 text-base text-foreground placeholder:text-muted-foreground focus:border-accent-info focus:outline-none focus:ring-1 focus:ring-accent-info sm:min-h-[18rem]"
         />
         <div className={`mt-1 text-right text-xs ${threadsTooLong ? 'text-sentiment-bear' : 'text-muted-foreground'}`}>
           {text.length} 字{threadsTooLong ? `（超過 Threads ${THREADS_MAX_CHARS} 字上限）` : ''}
@@ -343,7 +343,7 @@ export const PromoComposer: React.FC<PromoComposerProps> = ({ onScheduled }) => 
       </div>
 
       {/* Media */}
-      <div className={`${card} p-4`}>
+      <div className={`${card} p-3 sm:p-4`}>
         <div className="mb-3 flex items-center justify-between">
           <div className={labelCls}>媒體 Media（圖片／影片）</div>
           <button
@@ -421,7 +421,7 @@ export const PromoComposer: React.FC<PromoComposerProps> = ({ onScheduled }) => 
       </div>
 
       {/* Comments — text-only follow-ups (Threads reply chain / FB comments) */}
-      <div className={`${card} p-4`}>
+      <div className={`${card} p-3 sm:p-4`}>
         <div className="mb-3 flex items-center justify-between">
           <div className={`${labelCls} flex items-center gap-1.5`}>
             <MessageSquare className="h-3.5 w-3.5" /> 留言 Comments（純文字，依序串接在貼文下）
@@ -440,7 +440,7 @@ export const PromoComposer: React.FC<PromoComposerProps> = ({ onScheduled }) => 
             {comments.map((c, i) => {
               const over = toThreads && c.length > THREADS_MAX_CHARS;
               return (
-                <div key={i} className="rounded-lg border border-border p-3">
+                <div key={i} className="sm:rounded-lg sm:border sm:border-border sm:p-3">
                   <div className="mb-2 flex items-center justify-between">
                     <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">{i + 1}</span>
                     <button
@@ -456,7 +456,7 @@ export const PromoComposer: React.FC<PromoComposerProps> = ({ onScheduled }) => 
                     onChange={(e) => setComments((prev) => prev.map((v, idx) => (idx === i ? e.target.value : v)))}
                     rows={4}
                     placeholder="這則留言的內容…"
-                    className="min-h-[8rem] w-full resize-y rounded-lg border border-input bg-card p-3 text-base text-foreground placeholder:text-muted-foreground focus:border-accent-info focus:outline-none focus:ring-1 focus:ring-accent-info"
+                    className="-mx-3 min-h-[8rem] w-[calc(100%+1.5rem)] resize-y rounded-none border-x-0 border-y border-input sm:mx-0 sm:w-full sm:rounded-lg sm:border-x sm:border-y bg-card p-3 text-base text-foreground placeholder:text-muted-foreground focus:border-accent-info focus:outline-none focus:ring-1 focus:ring-accent-info"
                   />
                   <div className={`mt-1 text-right text-xs ${over ? 'text-sentiment-bear' : 'text-muted-foreground'}`}>
                     {c.length} 字{over ? `（超過 Threads ${THREADS_MAX_CHARS} 字上限）` : ''}
@@ -469,7 +469,7 @@ export const PromoComposer: React.FC<PromoComposerProps> = ({ onScheduled }) => 
       </div>
 
       {/* Platforms */}
-      <div className={`${card} p-4`}>
+      <div className={`${card} p-3 sm:p-4`}>
         <div className={`${labelCls} mb-3`}>發佈到</div>
         <div className="flex flex-wrap gap-4">
           <label className="inline-flex items-center gap-2 text-base text-foreground">
@@ -490,7 +490,7 @@ export const PromoComposer: React.FC<PromoComposerProps> = ({ onScheduled }) => 
       </div>
 
       {/* Actions */}
-      <div className="flex flex-wrap items-center gap-4">
+      <div className="flex flex-wrap items-center gap-4 px-3 sm:px-0">
         <div className="flex items-center gap-2">
           <button
             onClick={() => run(true)}
@@ -520,27 +520,27 @@ export const PromoComposer: React.FC<PromoComposerProps> = ({ onScheduled }) => 
         </div>
 
         {/* Scheduling Controls */}
-        <div className="flex items-center gap-2 border-l border-border pl-4">
+        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center sm:border-l sm:border-border sm:pl-4">
           <input
             type="datetime-local"
             value={scheduleTime}
             onChange={(e) => setScheduleTime(e.target.value)}
-            className="rounded-lg border border-input bg-card px-2 py-1.5 text-base text-foreground focus:border-accent-info focus:outline-none"
+            className="w-full rounded-lg border border-input bg-card px-2 py-1.5 text-base text-foreground focus:border-accent-info focus:outline-none sm:w-auto"
           />
           <button
             onClick={handleSchedule}
             disabled={!canSubmit || !scheduleTime || scheduling || busy}
             title="設定日期時間後排程發佈"
-            className="inline-flex items-center gap-1.5 rounded-lg border border-primary px-3 py-2 text-base font-semibold text-primary hover:bg-primary/10 disabled:opacity-60"
+            className="inline-flex min-h-11 w-full items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border border-primary px-3 py-2 text-base font-semibold text-primary hover:bg-primary/10 disabled:opacity-60 sm:min-h-0 sm:w-auto"
           >
-            <Clock className="h-4 w-4" />
+            <Clock className="h-4 w-4 shrink-0" />
             {scheduling ? '排程中…' : '排程發佈'}
           </button>
         </div>
       </div>
 
       {msg && (
-        <div className="rounded-lg border border-primary/40 bg-primary/10 px-4 py-2 text-base text-foreground">
+        <div className="mx-3 rounded-lg border border-primary/40 bg-primary/10 px-4 py-2 sm:mx-0 text-base text-foreground">
           {msg}
         </div>
       )}

@@ -22,6 +22,7 @@ Boundaries: episode-level content rendering and the "mentioned in episodes" list
 | Stock aggregation service | [`backend/src/services/stock.py`](../../backend/src/services/stock.py), [`backend/src/services/data_collection_service.py`](../../backend/src/services/data_collection_service.py) |
 | FinMind (TW) integration | [`backend/src/services/finmind_service.py`](../../backend/src/services/finmind_service.py), [`backend/src/services/finmind_websocket_service.py`](../../backend/src/services/finmind_websocket_service.py) |
 | Massive API (US) integration | [`backend/src/services/massive_service.py`](../../backend/src/services/massive_service.py), [`backend/src/services/massive_websocket_service.py`](../../backend/src/services/massive_websocket_service.py) |
+| Intraday index quotes + headlines (Yahoo Finance), market-move flash posts | [`backend/src/services/yahoo_chart.py`](../../backend/src/services/yahoo_chart.py), [`backend/src/services/market_moves.py`](../../backend/src/services/market_moves.py), [`backend/src/services/intraday_card.py`](../../backend/src/services/intraday_card.py) (`/api/og/market/{index}.png`) |
 
 ### Frontend
 
@@ -61,6 +62,7 @@ Boundaries: episode-level content rendering and the "mentioned in episodes" list
 
 - **FinMind** (`FINMIND_API_KEY` from Secret Manager) — Taiwan stock prices, OHLCV history.
 - **Massive API** (`MASSIVE_API_KEY` from Secret Manager) — US market data, including WebSocket price stream.
+- **Yahoo Finance chart/search endpoints** (no key, unofficial) — the only intraday source for indices (TAIEX, S&P 500, Nasdaq, SOX, Dow, Nikkei, KOSPI) the TW/US giants the market-move posts watch (2330.TW, NVDA, …), and — via the batched spark endpoint — every member of every registry theme for the theme lane. Used only by the market-move posts; owner-approved 2026-10-14 because those posts are not monetised. Best-effort: callers post nothing on `YahooChartError`. Do not route site price pages through it.
 - **VPS PostgreSQL** `podcast_db` — stock translations and the `firestore_mirror` content schema, including ticker insights and trending tickers. The schema name is historical; see [`../firestore-contract.md`](../firestore-contract.md#current-state-2026-09-27).
 - **Ticker logos** are external image URLs; render with a graceful missing-image state.
 

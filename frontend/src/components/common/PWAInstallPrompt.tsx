@@ -207,7 +207,7 @@ export const PWAInstallBanner: React.FC = () => {
 
   return (
     <div className="fixed bottom-20 left-3 right-3 sm:left-auto sm:right-4 sm:max-w-[360px] z-[55] animate-in fade-in slide-in-from-bottom-3 duration-300">
-      <div className="relative rounded-xl border border-border bg-card/95 backdrop-blur-md shadow-xl shadow-black/25 overflow-hidden">
+      <div className="relative rounded-lg border border-border bg-card/95 backdrop-blur-md shadow-xl shadow-black/25 overflow-hidden">
         <button
           type="button"
           onClick={dismiss}

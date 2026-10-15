@@ -249,3 +249,26 @@ def put_theme_views(
     )
     with urllib.request.urlopen(request, timeout=timeout) as response:
         return json.loads(response.read().decode("utf-8"))
+
+
+def news_drafts_request(body: dict[str, Any] | None = None) -> dict[str, Any] | None:
+    """Read drafting limits or stage a media-backed draft; never publish."""
+    base = admin_base_url()
+    token = os.environ.get("TINBOKER_SOCIAL_TOKEN")
+    if not base or not token:
+        return None
+    path = "/api/admin/promo/news-drafts" + ("/state" if body is None else "")
+    request = urllib.request.Request(
+        f"{base}{path}",
+        data=None if body is None else json.dumps(body, ensure_ascii=False).encode(),
+        headers=_headers({
+            "Authorization": f"Bearer {token}", "Content-Type": "application/json",
+        }),
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=60) as response:
+            payload = json.loads(response.read().decode())
+        return payload if isinstance(payload, dict) else None
+    except (urllib.error.URLError, TimeoutError, ValueError, OSError) as exc:
+        print(f"Warning: news draft handoff unavailable ({type(exc).__name__})")
+        return None
