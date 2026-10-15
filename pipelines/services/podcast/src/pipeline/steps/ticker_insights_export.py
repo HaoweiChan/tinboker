@@ -31,7 +31,8 @@ def export_ticker_insights(
         return
 
     raw_payload = episode_data.summary_result.get("ticker_insights")
-    if not raw_payload:
+    is_snapshot_rerun = config.rerun_from == "summarize"
+    if not raw_payload and not is_snapshot_rerun:
         return
 
     if not episode_data.episode_id:
@@ -40,6 +41,7 @@ def export_ticker_insights(
 
     from src.podcast.exporters.ticker_insights import (
         build_episode_insight_docs,
+        replace_episode_insights_postgres,
         write_episode_insights_postgres,
     )
 
@@ -60,11 +62,19 @@ def export_ticker_insights(
         launch_time = episode_data.created_time
 
     docs = build_episode_insight_docs(
-        raw_payload=raw_payload,
+        raw_payload=raw_payload or {},
         episode_id=episode_data.episode_id,
         podcaster=episode_data.podcast_name or "",
         podcast_launch_time=launch_time,
     )
+    if is_snapshot_rerun:
+        # Summarize reruns replace the episode's complete generated snapshot. An
+        # empty result is meaningful (no supported ticker mentions) and must
+        # remove obsolete rows left by the previous generation.
+        written = replace_episode_insights_postgres(episode_data.episode_id, docs)
+        print(f"  ✓ Replaced ticker_insights snapshot with {written} docs for {episode_data.episode_id}")
+        return
+
     if not docs:
         return
 

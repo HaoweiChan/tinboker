@@ -471,31 +471,50 @@ class PodcastService:
             return None
         try:
             dt = datetime.fromisoformat(s.replace('Z', '+00:00'))
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
         except ValueError:
             try:
-                dt = datetime.strptime(s[:10], '%Y-%m-%d')
+                dt = datetime.strptime(s[:10], '%Y-%m-%d').replace(tzinfo=timezone.utc)
             except ValueError:
                 return None
         return int(dt.timestamp() * 1000)
 
     @staticmethod
+    def _preferred_release_ms(spotify_release_date, released_at_ms: Optional[int]) -> Optional[int]:
+        """Use precise release time for date-only Spotify values when days agree."""
+        spotify_ms = PodcastService._spotify_release_ms(spotify_release_date)
+        if spotify_ms is None:
+            return released_at_ms
+        date_only = False
+        if isinstance(spotify_release_date, str):
+            value = spotify_release_date.strip()
+            try:
+                date_only = datetime.strptime(value, "%Y-%m-%d").date().isoformat() == value
+            except ValueError:
+                pass
+        if date_only and released_at_ms is not None:
+            spotify_day = datetime.fromtimestamp(spotify_ms / 1000, tz=timezone.utc).date()
+            released_day = datetime.fromtimestamp(released_at_ms / 1000, tz=timezone.utc).date()
+            if released_day == spotify_day:
+                return released_at_ms
+        return spotify_ms
+
+    @staticmethod
     def _episode_release_ms(episode: Episode) -> int:
-        """Publish time for recency/sort: prefer the true Spotify publish date,
-        then released_at_ms, then created_time."""
-        sp = PodcastService._spotify_release_ms(getattr(episode, 'spotify_release_date', None))
-        if sp is not None:
-            return sp
-        return episode.released_at_ms if episode.released_at_ms is not None else (episode.created_time or 0)
+        """Publish time for recency/sort, retaining precision when dates agree."""
+        preferred = PodcastService._preferred_release_ms(
+            getattr(episode, 'spotify_release_date', None), episode.released_at_ms
+        )
+        return preferred if preferred is not None else (episode.created_time or 0)
 
     def _dict_release_ms(self, ep: dict) -> int:
         """Publish time (Unix ms) for a raw Firestore episode dict.
-        Prefers spotify_release_date, then released_at_ms, then created_time."""
-        sp = self._spotify_release_ms(ep.get('spotify_release_date'))
-        if sp is not None:
-            return sp
+        Uses released_at_ms when its UTC day matches Spotify, then created_time."""
         r = self.transformer._normalize_released_at_ms(ep.get('released_at_ms'))
-        if r is not None:
-            return r
+        preferred = self._preferred_release_ms(ep.get('spotify_release_date'), r)
+        if preferred is not None:
+            return preferred
         return self.transformer.datetime_to_timestamp_ms(ep.get('created_time', datetime.now()))
 
     @staticmethod

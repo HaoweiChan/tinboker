@@ -50,7 +50,8 @@ from typing import Any
 
 import yaml
 
-# Scoped to one regeneration submission; ordinary pipeline calls are unchanged.
+# Scoped to one content-builder run. Regeneration uses this to enforce provider
+# restrictions; the regular pipeline uses it to persist call provenance.
 _GENERATION_CONTEXT: ContextVar = ContextVar("generation_context", default=None)
 
 
@@ -75,16 +76,42 @@ def _check_provider(model: str) -> str:
     return provider
 
 
-def _record_call(role: str, model: str, inputs: Any, response_model=None) -> None:
+def _record_call(
+    role: str,
+    model: str,
+    inputs: Any,
+    response_model=None,
+    response_content: Any = None,
+    response_provider: str | None = None,
+) -> None:
     context = _GENERATION_CONTEXT.get()
     if context is not None:
-        context[1].append({
-            "role": role, "provider": _check_provider(model),
+        record = {
+            "role": role,
+            "provider": response_provider or _check_provider(model),
+            "provider_evidence": "response" if response_provider else "route",
             "model": response_model or model.split(":", 1)[-1],
             "model_evidence": "response" if response_model else "request",
             "generated_at": datetime.now(timezone.utc).isoformat(),
             "input_sha256": hashlib.sha256(json.dumps(inputs, sort_keys=True, ensure_ascii=False).encode()).hexdigest(),
-        })
+        }
+        if response_content is not None:
+            content = response_content if isinstance(response_content, str) else json.dumps(
+                response_content, sort_keys=True, ensure_ascii=False, default=str
+            )
+            record["output_sha256"] = hashlib.sha256(content.encode()).hexdigest()
+        context[1].append(record)
+
+
+def discard_generation_call(role: str) -> None:
+    """Remove the latest role record when downstream validation uses fallback data."""
+    context = _GENERATION_CONTEXT.get()
+    if context is None:
+        return
+    for index in range(len(context[1]) - 1, -1, -1):
+        if context[1][index].get("role") == role:
+            del context[1][index]
+            return
 
 
 _PROMPTS_DIR = Path(__file__).parent / "prompts"
@@ -444,18 +471,31 @@ def invoke_json(role: str, messages: list[dict], schema: dict | None = None) -> 
                 response = model_obj.invoke(messages)
             else:
                 raise
-        _record_call(role, model_name, messages, (getattr(response, "response_metadata", None) or {}).get("model_name"))
+        response_metadata = getattr(response, "response_metadata", None) or {}
         raw = _sanitize_json_text(
             response.content if isinstance(response.content, str) else str(response.content)
         )
         try:
-            return json.loads(raw, strict=False)
+            parsed = json.loads(raw, strict=False)
         except json.JSONDecodeError as exc:
             last_err = exc
             if attempt < _MAX_RETRIES:
                 wait = 2 ** attempt
                 print(f"  ⚠ JSON parse failed (attempt {attempt + 1}): {exc} — retrying in {wait}s")
                 time.sleep(wait)
+        else:
+            # Only a response that parsed into the role's accepted output counts
+            # as generated provenance; malformed retries must not satisfy the
+            # completeness gate if the node later falls back.
+            _record_call(
+                role,
+                model_name,
+                messages,
+                response_metadata.get("model_name"),
+                response.content,
+                response_metadata.get("provider"),
+            )
+            return parsed
     raise ValueError(f"LLM JSON output unparseable after {_MAX_RETRIES + 1} attempts: {last_err}")
 
 
@@ -514,10 +554,18 @@ def decide(
                 # The body carries the real reason (bad question shape, context overflow);
                 # a bare status code has sent us chasing the wrong thing before.
                 raise RuntimeError(f"decisions endpoint {resp.status_code}: {resp.text[:300]}")
-            answers = resp.json().get("answers")
+            response_body = resp.json()
+            answers = response_body.get("answers")
             if not isinstance(answers, dict):
                 raise ValueError(f"decisions reply has no answers map: {resp.text[:200]}")
-            _record_call(role, model, {"state": state, "questions": questions}, resp.json().get("model"))
+            _record_call(
+                role,
+                model,
+                {"state": state, "questions": questions},
+                response_body.get("model"),
+                response_body,
+                response_body.get("provider"),
+            )
             return answers
         except Exception as exc:  # noqa: BLE001 — retry transport + transient 5xx alike
             last_err = exc
