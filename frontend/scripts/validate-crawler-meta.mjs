@@ -337,6 +337,40 @@ try {
   assert.ok(!renderPage(slow).includes('<h2>'), 'no empty sections when the enrichment is missing');
   assert.equal(await metaFor('/sector/sector_unknown', ORIGIN, API), null, 'unknown sector still resolves nothing');
 
+  // Episodes outside the release window: the API says 404, so the page must too —
+  // 1,089 of them were served as 200 empty shells (Search Console, 2026-10-15).
+  // Anything else (a 5xx, a timeout) is not proof the episode is gone.
+  {
+    const inner = globalThis.fetch;
+    const episodeStatus = (status) => async (url) => {
+      const u = String(url);
+      if (/\/api\/episodes\/[^/]+$/.test(u)) return new Response('{"detail":"Not Found"}', { status });
+      return inner(url);
+    };
+    globalThis.fetch = episodeStatus(404);
+    assert.deepEqual(await metaFor('/episode/out_of_window', ORIGIN, API), { notFound: true }, 'API 404 → notFound');
+    globalThis.fetch = episodeStatus(503);
+    assert.equal(await metaFor('/episode/abc123', ORIGIN, API), null, 'API 5xx → untouched page, not a 404');
+
+    // End to end through the Pages Function: a crawler gets 404 + noindex with the SPA
+    // body; a person gets the SPA untouched (it renders its own 找不到 message).
+    globalThis.fetch = episodeStatus(404);
+    const shell = () => new Response('<html><head><title>聽播客 TinBoker</title></head><body><div id="root"></div></body></html>',
+      { status: 200, headers: { 'content-type': 'text/html' } });
+    const call = (ua) => mw.onRequest({
+      request: new Request(`${ORIGIN}/episode/out_of_window`, { headers: { 'user-agent': ua } }),
+      next: async () => shell(),
+      env: { API_ORIGIN: API },
+    });
+    const bot = await call('Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)');
+    assert.equal(bot.status, 404, 'crawler gets a 404 for an out-of-window episode');
+    assert.equal(bot.headers.get('x-robots-tag'), 'noindex, nofollow');
+    assert.ok((await bot.text()).includes('id="root"'), 'the SPA body is still served');
+    const person = await call('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/140 Safari/537.36');
+    assert.equal(person.status, 200, 'people are not given a 404 page by the edge');
+    globalThis.fetch = inner;
+  }
+
   const podcaster = await metaFor('/podcaster/Gooaye%20%E8%82%A1%E7%99%8C', ORIGIN, API);
   const podPage = renderPage(podcaster);
   for (const needle of ['<h2>最新集數</h2>', 'href="/episode/abc123"', '<li>聯準會 9 月升息機率驟降</li>', '<h2>最常提到的個股</h2>', 'href="/stock/2330"', '4 次']) {

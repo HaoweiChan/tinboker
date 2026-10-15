@@ -432,6 +432,13 @@ export async function metaFor(pathname, origin, api) {
       fetch(`${api}/api/episodes/${encodeURIComponent(id)}`),
       withTimeout(getJson(`${api}/api/episodes/${encodeURIComponent(id)}/cross-show`, CACHE_1H), 5000),
     ]);
+    // A 404 here is an episode outside the release window (or never existed). The page
+    // used to answer 200 with the bare SPA shell — title "聽播客 TinBoker", 12 characters
+    // of text, no canonical — and Search Console listed 1,089 such URLs on 2026-10-15
+    // as "Duplicate without user-selected canonical": a thousand identical empty pages
+    // on the domain. Say so with a real 404. Any other failure (5xx, timeout) is not
+    // proof the episode is gone, so it still falls back to the untouched page.
+    if (r.status === 404) return { notFound: true };
     if (!r.ok) return null;
     const e = await r.json();
     // Mirror EpisodeDetail's title/name derivation exactly (episode_title field).
@@ -772,6 +779,9 @@ async function handle(context, url) {
     const meta = await metaFor(url.pathname, url.origin, api);
     const res = await next();
     if (!meta) return wrap(res, isTag);
+    // Same SPA body (a human who follows an old link still sees the page's own 找不到
+    // message), but a 404 status and noindex so crawlers drop the URL.
+    if (meta.notFound) return wrap(new Response(res.body, { status: 404, headers: res.headers }), true);
     if (!(res.headers.get('content-type') || '').includes('text/html')) return wrap(res, isTag);
 
     const full = meta.title ? `${meta.title} | ${SITE}` : SITE;
