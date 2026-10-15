@@ -53,7 +53,7 @@ from zoneinfo import ZoneInfo
 import httpx
 
 from src.config import settings
-from src.services import social_ledger, yahoo_chart
+from src.services import market_news, social_ledger, yahoo_chart
 from src.services.threads_service import ThreadsError, ThreadsService
 from src.services.yahoo_chart import Intraday, Quote, YahooChartError
 
@@ -64,6 +64,7 @@ FORMAT = "market_move_intraday"
 HOLD_RATIO = 0.5             # keep at least half of the day's extreme so far
 NEWS_MAX_AGE_HOURS = 20      # overnight + pre-market; older is yesterday's story
 CAUSE_MAX_CHARS = 32
+MAX_HEADLINES = 25           # newest first; enough for two wires and a search
 STALE_SECONDS = 30 * 60      # Yahoo delays some index feeds; older than this is not "now"
 RETRY_AFTER = timedelta(minutes=10)
 THEME_SCAN_EVERY = timedelta(minutes=5)
@@ -120,7 +121,7 @@ class Market:
 I = Instrument  # noqa: E741 — the registry below reads better short
 MARKETS: dict[str, Market] = {m.id: m for m in (
     Market("TW", "台股", "Asia/Taipei", (9, 0),
-           (I("^TWII", "加權指數", "台股加權指數"), I("^TWOII", "櫃買指數")), "Taiwan stocks TAIEX",
+           (I("^TWII", "加權指數", "台股加權指數"),), "Taiwan stocks TAIEX",
            (I("2330.TW", "台積電", news_query="TSMC"), I("2454.TW", "聯發科", news_query="MediaTek"),
             I("2308.TW", "台達電", news_query="Delta Electronics"), I("2317.TW", "鴻海", news_query="Foxconn Hon Hai"),
             I("3711.TW", "日月光投控", news_query="ASE Technology"), I("2383.TW", "台光電", news_query="Elite Material"),
@@ -340,7 +341,8 @@ def fresh_headlines(items: list[dict], now: datetime) -> list[dict]:
             continue
         seen.add(h["url"])
         out.append(h)
-    return out[:15]
+    out.sort(key=lambda h: h.get("published", 0), reverse=True)
+    return out[:MAX_HEADLINES]
 
 
 # ── the reason: the model extracts, the code decides how sure to sound ─────
@@ -367,17 +369,18 @@ def subject_of(market: Market, move: Move | ThemeMove) -> Subject:
 
 CAUSE_SYSTEM = """你負責從新聞標題中，找出某個股價指數、個股或題材族群今天盤中大幅波動的原因。
 
-只能根據提供的標題判斷，不可使用標題以外的知識或推測。
+只能根據提供的新聞（標題，以及有附上時「｜」後的摘要）判斷，不可使用新聞以外的知識或推測。標題常只寫漲跌幅，原因多半在摘要裡。
 回傳 JSON：{"cause": "...", "support": [標題編號...]}
 - cause：繁體中文名詞短語，30 字以內，具體描述驅動因素本身（事件或市場擔憂的事），例如「美國公債殖利率走升」「輝達財報優於預期」「市場擔憂SpaceX籌資400億美元購買輝達晶片」。要能直接接在「主因」或「市場推測與…有關」中間讀通。不要寫漲跌幅、不要加句號、不要寫「可能」「市場推測」等語氣詞。
-- support：明確把「這個標的今天的漲跌」歸因於這個因素的標題編號（標的是指數時，講整個市場今天漲跌的標題也算；標的是題材族群時，講族群內個股或整個產業今天漲跌的標題也算）。
-- 沒有任何標題明確解釋這次波動時，回傳 {"cause": "", "support": []}。寧可留白，不要猜。"""
+- support：標題或摘要明確把「這個標的今天的漲跌」歸因於這個因素的新聞編號（標的是指數時，講整個市場今天漲跌的標題也算；標的是題材族群時，講族群內個股或整個產業今天漲跌的標題也算）。
+- 沒有任何新聞明確解釋這次波動時，回傳 {"cause": "", "support": []}。寧可留白，不要猜。"""
 
 
 async def _extract_cause(market: Market, subject: Subject, headlines: list[dict]) -> dict:
-    listing = "\n".join(f"[{i}] {h['publisher'] or '?'}：{h['title']}" for i, h in enumerate(headlines))
+    listing = "\n".join(f"[{i}] {h['publisher'] or '?'}：{h['title']}"
+                        + (f"｜{h['summary']}" if h.get("summary") else "") for i, h in enumerate(headlines))
     user = (f"市場：{market.name}；{subject.kind}：{subject.label}"
-            f"盤中{'上漲' if subject.pct >= 0 else '下跌'} {abs(subject.pct):.2f}%。\n\n標題：\n{listing}")
+            f"盤中{'上漲' if subject.pct >= 0 else '下跌'} {abs(subject.pct):.2f}%。\n\n新聞：\n{listing}")
     async with httpx.AsyncClient(timeout=45.0) as client:
         resp = await client.post(
             "https://openrouter.ai/api/v1/chat/completions",
@@ -401,15 +404,17 @@ async def find_cause(market: Market, subject: Subject, now: datetime) -> dict:
     if not settings.openrouter_api_key:
         _problems.append("OPENROUTER_API_KEY 未設定，找不到原因就不會發文")
         return {**empty, "error": "no_openrouter_key"}
-    try:
-        items = []
-        for q in dict.fromkeys(subject.queries):
+    # Local-language wires first (they carry the morning's own copy), then Yahoo's search.
+    # One source failing is not a reason to stop: the others may still explain the move.
+    items = list(await market_news.headlines(market.id))
+    for q in dict.fromkeys(subject.queries):
+        try:
             items += await yahoo_chart.news(q)
-    except YahooChartError as e:
-        return {**empty, "error": str(e)[:200]}
+        except YahooChartError as e:
+            logger.warning("market move news query %r failed: %s", q, e)
     headlines = fresh_headlines(items, now)
     if not headlines:
-        return {**empty, "error": "no_fresh_headlines"}
+        return {**empty, "error": f"no_fresh_headlines (raw={len(items)})"}
     try:
         out = await _extract_cause(market, subject, headlines)
     except Exception as e:  # noqa: BLE001 — timeout, 5xx, malformed JSON: no reason, no post
