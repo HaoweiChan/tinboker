@@ -220,9 +220,11 @@ def test_cross_show_counts_other_shows_inside_the_window_before_the_episode(sess
     assert [r["ticker"] for r in body["rows"]] == ["2330", "3037", "6981"]
     assert "並非投資建議" in body["disclaimer"]
 
-    # The public route exposes own subjects, never per-subject comparison details.
+    # The public route previews the most-discussed compared stocks, never the rest.
     teaser = _call(api.get_episode_cross_show_teaser("ep"))
-    assert teaser["rows"] == [] and teaser["compared"] == 2 and teaser["opposite"] == 1
+    assert [r["ticker"] for r in teaser["rows"]] == ["2330", "3037"]
+    assert teaser["rows"][0] == by["2330"]
+    assert teaser["compared"] == 2 and teaser["opposite"] == 1
     assert teaser["shows_in_window"] == 3 and teaser["window_days"] == 30
 
 
@@ -277,7 +279,7 @@ def test_cross_show_compares_sectors_by_id_and_keeps_public_subjects_private_com
     assert by["semi"]["others"] == {"shows": 1, "mentions": 1, "bull": 1, "neutral": 0, "bear": 0, "unknown": 0, "lean": "BULLISH"}
     assert by["ai"]["relation"] == "opposite"
     teaser = _call(api.get_episode_cross_show_teaser("ep"))
-    assert teaser["rows"] == []
+    assert teaser["rows"] == []  # theme comparisons are never previewed
     assert teaser["compared"] == 2 and teaser["opposite"] == 1
     assert teaser["subjects"] == body["subjects"]
     assert all(set(s) == {"mention_type", "ticker", "exposure_id", "name", "stance"}
@@ -294,6 +296,7 @@ def test_cross_show_keeps_all_subjects_and_counts_beyond_eight(session):
     assert len(body["rows"]) == len(body["subjects"]) == 10
     teaser = _call(api.get_episode_cross_show_teaser("ep"))
     assert teaser["compared"] == teaser["opposite"] == 9
+    assert len(teaser["rows"]) == api.FREE_PREVIEW_ROWS  # a taste, not the table
 
 
 def test_cross_show_sector_release_scope_and_uncompared_subject(session, monkeypatch):

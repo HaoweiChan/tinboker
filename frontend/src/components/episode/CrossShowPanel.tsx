@@ -12,6 +12,8 @@ import type { CrossShowResponse } from '@/validation/schemas';
 import { CROSS_SHOW_LOCKED, crossShowLead, isOpposite, othersCounts, othersLean, stanceZh } from '../../../shared/crossShow.js';
 
 type Subject = CrossShowResponse['subjects'][number];
+// Stock rows a non-member sees unblurred when the public route has no preview rows.
+const FREE_VISIBLE = 2;
 const subjectKey = (subject: Subject) => `${subject.mention_type}:${subject.ticker ?? subject.exposure_id}`;
 
 interface Props {
@@ -45,11 +47,18 @@ export const CrossShowPanel: React.FC<Props> = ({ episode, data, sectorPerf, sec
     related_tickers: (data?.subjects ?? []).flatMap((s) => s.mention_type === 'ticker' && s.ticker ? [s.ticker] : []),
   }], [episode, data]);
   const priceSinceMap = useStockPriceSinceMap(priceEpisodes);
-  const comparisons = new Map((isMember ? detail?.rows ?? [] : []).map((r) => [subjectKey(r), r]));
+  // Members get every comparison; everyone else gets the public route's FREE_PREVIEW_ROWS.
+  const comparisons = new Map((isMember ? detail?.rows ?? [] : data?.rows ?? []).map((r) => [subjectKey(r), r]));
 
   if (!data?.subjects.length || data.episode_id !== episode.id) return null;
   const tone = (stance: Parameters<typeof getSentimentDisplay>[0] | undefined) => getSentimentDisplay(stance ?? null, stockColorMode)?.toneClass ?? 'text-muted-foreground';
-  const tickers = data.subjects.filter((s) => s.mention_type === 'ticker' && s.ticker);
+  const allTickers = data.subjects.filter((s) => s.mention_type === 'ticker' && s.ticker);
+  // Non-members: the previewed stocks lead (or the first two when nothing was compared);
+  // the rest render blurred, with placeholder comparison text, under the upgrade prompt.
+  const previewKeys = new Set(isMember ? [] : (data.rows.length ? data.rows.map(subjectKey) : allTickers.slice(0, FREE_VISIBLE).map(subjectKey)));
+  const tickers = isMember ? allTickers
+    : [...allTickers.filter((t) => previewKeys.has(subjectKey(t))), ...allTickers.filter((t) => !previewKeys.has(subjectKey(t)))];
+  const isBlurred = (subject: Subject) => !isMember && !previewKeys.has(subjectKey(subject));
   const themes = data.subjects.filter((s) => s.mention_type === 'sector' && s.exposure_id);
   // The theme rows reuse the episode's own exposure records (icon, constituents) for the
   // themes content_mentions lists; a theme missing from them still gets a bare row.
@@ -75,8 +84,8 @@ export const CrossShowPanel: React.FC<Props> = ({ episode, data, sectorPerf, sec
               sections' change columns line up. */}
           <div className="flex items-center gap-2 px-2.5 pb-1 text-2xs text-muted-foreground">
             <span className="flex-1">個股</span>
-            <span className="w-8 text-center">本集</span>
-            <span className="w-16 text-right">播出至今</span>
+            <span className="w-10 text-center">本集</span>
+            <span className="w-20 text-right">播出至今</span>
             <span className="w-[18px] -mr-0.5" aria-hidden />
           </div>
           <div className="flex flex-col gap-1.5">
@@ -85,7 +94,9 @@ export const CrossShowPanel: React.FC<Props> = ({ episode, data, sectorPerf, sec
               const lean = row ? othersLean(row) : null;
               const ticker = subject.ticker!;
               const change = isRecentEpisode(episode) ? null : priceSinceMap.get(ticker.toUpperCase()) ?? null;
-              const others = !isMember ? <span>其他節目：會員限定</span>
+              const blurred = isBlurred(subject);
+              const others = blurred ? <span>其他 5 個節目 看多</span>
+                : !isMember && !row ? <span>其他節目沒有提到</span>
                 : !row ? <span>{detailFailed ? '其他節目：暫時無法載入' : detail ? '' : '其他節目：載入中…'}</span>
                   : row.others.shows === 0 ? <span>其他節目沒有提到</span>
                     : <span>
@@ -94,15 +105,20 @@ export const CrossShowPanel: React.FC<Props> = ({ episode, data, sectorPerf, sec
                       {isOpposite(row) && <span className="ml-1 text-primary">相反</span>}
                     </span>;
               return (
-                <div key={subjectKey(subject)} className="flex items-center gap-2 rounded-md border border-border/60 bg-muted/20 px-2.5 py-2">
+                <div
+                  key={subjectKey(subject)}
+                  aria-hidden={blurred || undefined}
+                  className={`flex items-center gap-2 rounded-md border border-border/60 bg-muted/20 px-2.5 py-2 ${blurred ? 'blur-[3px] select-none pointer-events-none' : ''}`}
+                >
                   <div className="flex-1 min-w-0">
                     <Link to={`/stock/${encodeURIComponent(ticker)}`} className="block text-sm font-medium hover:underline truncate leading-snug">
                       {subject.name && subject.name !== ticker ? <>{subject.name}<span className="ml-1.5 font-mono text-2xs text-muted-foreground">{ticker}</span></> : ticker}
                     </Link>
                     <span className="block text-2xs text-muted-foreground truncate" title={row ? othersCounts(row.others) : undefined}>{others}</span>
                   </div>
-                  <span className={`w-8 shrink-0 text-center text-xs font-semibold ${tone(subject.stance)}`}>{subject.stance ? stanceZh(subject.stance) : '—'}</span>
-                  <span className="w-16 shrink-0 text-right"><ChangePct value={change} sizeClass="text-xs" /></span>
+                  <span className={`w-10 shrink-0 text-center text-xs font-semibold ${tone(subject.stance)}`}>{subject.stance ? stanceZh(subject.stance) : '—'}</span>
+                  {/* ChangePct is a flex box, so text-right alone left it left-aligned. */}
+                  <span className="w-20 shrink-0 flex justify-end"><ChangePct value={change} sizeClass="text-xs" /></span>
                   <span className="w-[18px] shrink-0 -mr-0.5" aria-hidden />
                 </div>
               );
