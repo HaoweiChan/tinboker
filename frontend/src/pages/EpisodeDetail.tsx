@@ -7,28 +7,21 @@ import { getEpisodeCrossShow } from '@/services/api/mentions';
 import type { CrossShowResponse } from '@/validation/schemas';
 import { PodcastAvatar } from '@/components/common/PodcastAvatar';
 import { PageContent } from '@/components/layout/PageContent';
-import { TickerRow } from '@/components/redesign';
 import { cn } from '@/lib/utils';
 import { getEpisodeById, getEpisodeByIdOnly, getPodcastByName, type Episode as ApiEpisode } from '@/services';
 import { getSectorBoard, type SectorBoardItem } from '@/services/api/podcasts';
-import { SectorExposureList } from '@/components/episode/SectorExposureList';
 import { fetchWithFallback } from '@/services/api/migration';
 import { parseSummaryTopicSections, parseTimestampedSections, skippableSectionsFromSegments, type TimestampedSection } from '@/utils/parseTimestampedSections';
 import { usePlayerStore } from '@/store/usePlayerStore';
 import { useAppStore, useEpisodeBookmarks } from '@/store/useAppStore';
 import { CommentSection } from '@/components/episode/CommentSection';
 import { useRequireAuth } from '@/hooks/useRequireAuth';
-import { useStockPriceMap } from '@/hooks/useStockPriceMap';
-import { useStockPriceSinceMap, isRecentEpisode } from '@/hooks/useStockPriceSinceMap';
-import { useTranslationMap } from '@/hooks/useTranslationMap';
 import { useTagLabels, useHiddenTagSlugs, tagLabelFor, normalizeTagSlug } from '@/hooks/useTagLabels';
-import { useEpisodeSentimentMap } from '@/hooks/useEpisodeSentimentMap';
 import { EpisodeInsightCard } from '@/components/episode/EpisodeInsightCard';
 import { episodeLeadFrom } from '@/lib/episodeLead';
 import { SummaryMarkdown } from '@/components/episode/SummaryMarkdown';
 import { EpisodeDebugPanel } from '@/components/episode/EpisodeDebugPanel';
 import { SlideViewer } from '@/components/common/SlideViewer';
-import type { Sentiment } from '@/lib/sentiment';
 
 const IS_DEV = import.meta.env.DEV || (import.meta.env.VITE_STAGE as string) === 'DEV';
 
@@ -61,20 +54,6 @@ function spotifyUriFrom(ep: ApiEpisode | null): string | undefined {
   return undefined;
 }
 
-function tickerLookupKeys(symbol: string): string[] {
-  const upper = symbol.toUpperCase();
-  const bare = upper.replace(/\.[A-Z]+$/i, '');
-  return [...new Set([upper, bare, `${bare}.TW`, `${bare}.KS`])];
-}
-
-function firstMapValue<T>(map: Map<string, T>, keys: string[]): T | undefined {
-  for (const key of keys) {
-    const value = map.get(key);
-    if (value !== undefined) return value;
-  }
-  return undefined;
-}
-
 export const EpisodeDetail: React.FC = () => {
   const { id } = useParams();
   const [searchParams] = useSearchParams();
@@ -91,11 +70,11 @@ export const EpisodeDetail: React.FC = () => {
   const [tagsExpanded, setTagsExpanded] = useState(false);
   const [podcastImageUrl, setPodcastImageUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  // Per-sector performance + visuals for the 產業/主題曝險 rail, keyed by exposure_id.
+  // Sector performance for discussed themes, keyed by exposure_id.
   // Sourced from the (cached) hot-sectors board so each exposure shows its aggregate
   // change without a bespoke price fetch.
   const [sectorPerf, setSectorPerf] = useState<Map<string, SectorBoardItem>>(new Map());
-  // 其他節目怎麼看 — an enrichment: the page never waits on it and renders without it.
+  // Discussed subjects and public comparison counts from content_mentions.
   const [crossShow, setCrossShow] = useState<CrossShowResponse | null>(null);
   useEffect(() => {
     if (!id) return;
@@ -107,10 +86,6 @@ export const EpisodeDetail: React.FC = () => {
     return () => { alive = false; };
   }, [id]);
   const [sectorPerfLoading, setSectorPerfLoading] = useState(false);
-  // Post-mention performance (TKB-001) deliberately does NOT render here: the rail is
-  // for what the episode talks about, and per-ticker return chips made it noisy. The
-  // stock page keeps its 播客提及後續表現 section.
-
   useEffect(() => {
     if (!id) return;
     let alive = true;
@@ -156,9 +131,8 @@ export const EpisodeDetail: React.FC = () => {
     };
   }, [id, podcastName]);
 
-  // Load the hot-sectors board once an episode with exposures is in hand, then index
-  // it by exposure_id so the rail can show each sector's aggregate performance.
-  const hasExposures = (episode?.sector_exposures?.length ?? 0) > 0;
+  // Load sector performance only for themes present in content_mentions.
+  const hasExposures = crossShow?.subjects.some((subject) => subject.mention_type === 'sector') ?? false;
   useEffect(() => {
     if (!hasExposures) return;
     let alive = true;
@@ -199,29 +173,6 @@ export const EpisodeDetail: React.FC = () => {
     },
     [summarySections, chapters, skippableSections],
   );
-  const tickerSymbols = useMemo(() => (Array.isArray(episode?.related_tickers) ? episode!.related_tickers.slice(0, 8) : []), [episode]);
-  const priceMap = useStockPriceMap(tickerSymbols);
-  const episodesForSince = useMemo(() => (episode ? [episode] : []), [episode]);
-  const priceSinceMap = useStockPriceSinceMap(episodesForSince);
-  const useSince = episode ? !isRecentEpisode(episode) && priceSinceMap.size > 0 : false;
-  const activeMap = useSince ? priceSinceMap : priceMap;
-  const sinceLabel = useSince ? '播出至今' : null;
-  const rawTranslationMap = useTranslationMap(tickerSymbols);
-  const episodeIds = useMemo(() => (episode ? [episode.id] : []), [episode]);
-  const episodeSentiments = useEpisodeSentimentMap(episodeIds);
-  const tickers = useMemo(() => {
-    const sent = episode ? episodeSentiments.get(episode.id) : undefined;
-    return tickerSymbols.map((s) => {
-      const keys = tickerLookupKeys(s);
-      return {
-        symbol: s,
-        name: firstMapValue(rawTranslationMap, keys)?.displayName,
-        sentiment: sent ? firstMapValue<Sentiment>(sent, keys) : undefined,
-        changePercent: firstMapValue(activeMap, keys),
-        sinceLabel,
-      };
-    });
-  }, [tickerSymbols, rawTranslationMap, episodeSentiments, activeMap, episode, sinceLabel]);
   const spotifyUri = useMemo(() => spotifyUriFrom(episode), [episode]);
 
   // Hero sector chips: collapse duplicate exposure_ids (an episode tags the same
@@ -331,34 +282,7 @@ export const EpisodeDetail: React.FC = () => {
         url={canonicalUrl}
         structuredData={structuredData}
       />
-      <PageContent
-        rail={
-          (tickers.length > 0 || (episode?.sector_exposures?.length ?? 0) > 0) ? (
-            <nav className="bg-card border border-border rounded-md p-3 max-h-[calc(100vh-96px)] overflow-y-auto scrollbar-thin" aria-label="集數導覽">
-              {tickers.length > 0 && (
-                <section aria-labelledby="episode-rail-tickers">
-                  <h4 id="episode-rail-tickers" className="text-2xs font-semibold tracking-[0.08em] uppercase text-muted-foreground px-2 mb-2">提及個股</h4>
-                  <div className="ticker-list flex flex-col gap-1.5">
-                    {tickers.map((t) => (
-                      <TickerRow key={t.symbol} ticker={t} onClick={() => navigate(`/stock/${encodeURIComponent(t.symbol)}`)} />
-                    ))}
-                  </div>
-                </section>
-              )}
-              {(episode?.sector_exposures?.length ?? 0) > 0 && (
-                <section aria-labelledby="episode-rail-sectors" className={tickers.length > 0 ? 'mt-4' : ''}>
-                  <h4 id="episode-rail-sectors" className="text-2xs font-semibold tracking-[0.08em] uppercase text-muted-foreground px-2 mb-2">提及產業</h4>
-                  <SectorExposureList
-                    exposures={episode!.sector_exposures!}
-                    perfMap={sectorPerf}
-                    loading={sectorPerfLoading}
-                  />
-                </section>
-              )}
-            </nav>
-          ) : undefined
-        }
-      >
+      <PageContent>
         <Link to="/" className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground mb-3"><ChevronLeft size={14} /> 回首頁</Link>
 
         {loading ? (
@@ -487,7 +411,7 @@ export const EpisodeDetail: React.FC = () => {
               </section>
             )}
 
-            <CrossShowPanel episodeId={id ?? ''} data={crossShow} />
+            <CrossShowPanel key={episode.id} episode={episode} data={crossShow} sectorPerf={sectorPerf} sectorPerfLoading={sectorPerfLoading} />
 
             {/* 摘要 — structured summary (headings, paragraphs, ticker/tag/time markers)
                 minus the headline + thesis the 關鍵洞察 card above already shows. */}
@@ -498,30 +422,6 @@ export const EpisodeDetail: React.FC = () => {
                   content={episodeLead.body}
                   onSeek={spotifyUri ? playFrom : undefined}
                   focusMs={searchParams.get('t') && /^\d+$/.test(searchParams.get('t') as string) ? Number(searchParams.get('t')) : null}
-                />
-              </section>
-            )}
-
-            {/* 提及個股 — mobile fallback; desktop uses the right rail. */}
-            {tickers.length > 0 && (
-              <section className="xl:hidden bg-card border border-border rounded-md p-5 sm:p-6 mb-3.5">
-                <h3 className="heading-accent text-lg font-semibold text-foreground mb-3.5">提及個股</h3>
-                <div className="ticker-list flex flex-col gap-1.5">
-                  {tickers.map((t) => (
-                    <TickerRow key={t.symbol} ticker={t} onClick={() => navigate(`/stock/${encodeURIComponent(t.symbol)}`)} />
-                  ))}
-                </div>
-              </section>
-            )}
-
-            {/* 產業 / 主題曝險 — mobile fallback; desktop uses the right rail. */}
-            {(episode.sector_exposures?.length ?? 0) > 0 && (
-              <section className="xl:hidden bg-card border border-border rounded-md p-5 sm:p-6 mb-3.5">
-                <h3 className="heading-accent text-lg font-semibold text-foreground mb-3.5">提及產業</h3>
-                <SectorExposureList
-                  exposures={episode.sector_exposures!}
-                  perfMap={sectorPerf}
-                  loading={sectorPerfLoading}
                 />
               </section>
             )}
