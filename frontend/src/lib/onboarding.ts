@@ -36,6 +36,17 @@ export interface ChangelogEntry {
 //   docs/workflows/deploy-flow.md § "In-app changelog (What's new)".
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.14.4',
+    date: '2026-10',
+    items: [
+      '播放器的進度條可以直接拖曳，手指往上滑還能放慢速度、微調到想聽的那一句。',
+      '點摘要裡的時間跳到該段播放時，畫面不會再跑回最上方。',
+      '兆華與股惑仔、鈔錢部署等節目的新集數恢復可以播放。',
+      '「走勢」的個股和題材卡，點卡片任何地方都能展開。',
+      '介面視覺整理：標籤和卡片更俐落，首頁「本週市場在聊什麼」的長條在大螢幕上完整延伸。',
+    ],
+  },
+  {
     version: '0.14.1',
     date: '2026-10',
     items: [
