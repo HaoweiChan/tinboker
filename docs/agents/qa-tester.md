@@ -183,11 +183,11 @@ curl -s "{API}/api/graphs/${GRAPH_ID}"
 
 ```bash
 # Verify JWT check rejects invalid token
-curl -s -H "Authorization: Bearer invalid_token" "{API}/user/me"
+curl -s -H "Authorization: Bearer invalid_token" "{API}/api/auth/me"
 ```
 
 **Checks:**
-- [ ] `/user/me` with invalid token returns 401 (not 500)
+- [ ] `/api/auth/me` with invalid token returns 401 (not 500)
 - [ ] `/auth/check` endpoint exists and returns 401 without token
 
 ### 2.6 Ticker Insights Endpoint
@@ -483,9 +483,9 @@ check "no redis connection_str" "curl -s $BACKEND/health | python3 -c \"import s
 
 echo "=== API Endpoints ==="
 check "search suggest"          "curl -s '$BACKEND/api/search/suggest?q=apple' | python3 -c \"import sys,json; d=json.load(sys.stdin); print('ok' if d.get('stocks') else 'empty')\"" "ok"
-check "podcasts list"           "curl -s '$BACKEND/api/podcasts' | python3 -c \"import sys,json; d=json.load(sys.stdin); print('ok' if isinstance(d,list) and len(d)>0 else 'empty')\"" "ok"
+check "sources list"            "curl -s '$BACKEND/api/sources' | python3 -c \"import sys,json; d=json.load(sys.stdin); print('ok' if d.get('items') else 'empty')\"" "ok"
 check "graphs list"             "curl -s '$BACKEND/api/graphs?limit=3' | python3 -c \"import sys,json; d=json.load(sys.stdin); print('ok' if isinstance(d,list) else 'fail')\"" "ok"
-check "auth rejects invalid"    "curl -s -o /dev/null -w '%{http_code}' -H 'Authorization: Bearer bad' '$BACKEND/user/me'" "401"
+check "auth rejects invalid"    "curl -s -o /dev/null -w '%{http_code}' -H 'Authorization: Bearer bad' '$BACKEND/api/auth/me'" "401"
 check "admin blocked"           "curl -s -o /dev/null -w '%{http_code}' '$BACKEND/api/admin/system'" "40"
 
 echo "=== Frontend ==="

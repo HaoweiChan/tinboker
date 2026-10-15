@@ -595,7 +595,7 @@ async def test_a_theme_morning_posts_once_with_its_bar_card_and_scans_every_five
 
 
 @pytest.mark.asyncio
-async def test_theme_scan_waits_five_minutes_between_looks(temp_db, monkeypatch):
+async def test_theme_scan_waits_fifteen_minutes_between_looks(temp_db, monkeypatch):
     _wire(monkeypatch, FLAT)
     looks = []
 
@@ -603,9 +603,9 @@ async def test_theme_scan_waits_five_minutes_between_looks(temp_db, monkeypatch)
         looks.append(now)
         return []
     monkeypatch.setattr(mm, "baskets", baskets)
-    for m in (0, 1, 4, 5, 6):
+    for m in (0, 1, 5, 14, 15, 16):
         await mm.publish_due(_tick(m))
-    assert [int((t - _tick(0)).total_seconds() // 60) for t in looks] == [0, 5]
+    assert [int((t - _tick(0)).total_seconds() // 60) for t in looks] == [0, 15]
 
 
 def _async(value):

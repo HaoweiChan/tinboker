@@ -66,7 +66,9 @@ NEWS_MAX_AGE_HOURS = 20      # overnight + pre-market; older is yesterday's stor
 CAUSE_MAX_CHARS = 32
 STALE_SECONDS = 30 * 60      # Yahoo delays some index feeds; older than this is not "now"
 RETRY_AFTER = timedelta(minutes=10)
-THEME_SCAN_EVERY = timedelta(minutes=5)
+# 15 min: a theme move has to hold inside a 90-minute window anyway, and every scan is
+# ~30 spark batches; at 5 min they were the 429 bursts in the first prod window.
+THEME_SCAN_EVERY = timedelta(minutes=15)
 THEME_MIN_MEMBERS = 3        # fewer quoted members than this is a pair, not a theme
 THEME_BREADTH = 0.7          # share of members that must move with the median
 THEME_CARD_ROWS = 10
