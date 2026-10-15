@@ -53,7 +53,7 @@ from zoneinfo import ZoneInfo
 import httpx
 
 from src.config import settings
-from src.services import social_ledger, yahoo_chart
+from src.services import market_news, social_ledger, yahoo_chart
 from src.services.threads_service import ThreadsError, ThreadsService
 from src.services.yahoo_chart import Intraday, Quote, YahooChartError
 
@@ -64,6 +64,7 @@ FORMAT = "market_move_intraday"
 HOLD_RATIO = 0.5             # keep at least half of the day's extreme so far
 NEWS_MAX_AGE_HOURS = 20      # overnight + pre-market; older is yesterday's story
 CAUSE_MAX_CHARS = 32
+MAX_HEADLINES = 25           # newest first; enough for two wires and a search
 STALE_SECONDS = 30 * 60      # Yahoo delays some index feeds; older than this is not "now"
 RETRY_AFTER = timedelta(minutes=10)
 THEME_SCAN_EVERY = timedelta(minutes=5)
@@ -120,7 +121,7 @@ class Market:
 I = Instrument  # noqa: E741 — the registry below reads better short
 MARKETS: dict[str, Market] = {m.id: m for m in (
     Market("TW", "台股", "Asia/Taipei", (9, 0),
-           (I("^TWII", "加權指數", "台股加權指數"), I("^TWOII", "櫃買指數")), "Taiwan stocks TAIEX",
+           (I("^TWII", "加權指數", "台股加權指數"),), "Taiwan stocks TAIEX",
            (I("2330.TW", "台積電", news_query="TSMC"), I("2454.TW", "聯發科", news_query="MediaTek"),
             I("2308.TW", "台達電", news_query="Delta Electronics"), I("2317.TW", "鴻海", news_query="Foxconn Hon Hai"),
             I("3711.TW", "日月光投控", news_query="ASE Technology"), I("2383.TW", "台光電", news_query="Elite Material"),
@@ -340,7 +341,8 @@ def fresh_headlines(items: list[dict], now: datetime) -> list[dict]:
             continue
         seen.add(h["url"])
         out.append(h)
-    return out[:15]
+    out.sort(key=lambda h: h.get("published", 0), reverse=True)
+    return out[:MAX_HEADLINES]
 
 
 # ── the reason: the model extracts, the code decides how sure to sound ─────
@@ -401,15 +403,17 @@ async def find_cause(market: Market, subject: Subject, now: datetime) -> dict:
     if not settings.openrouter_api_key:
         _problems.append("OPENROUTER_API_KEY 未設定，找不到原因就不會發文")
         return {**empty, "error": "no_openrouter_key"}
-    try:
-        items = []
-        for q in dict.fromkeys(subject.queries):
+    # Local-language wires first (they carry the morning's own copy), then Yahoo's search.
+    # One source failing is not a reason to stop: the others may still explain the move.
+    items = list(await market_news.headlines(market.id))
+    for q in dict.fromkeys(subject.queries):
+        try:
             items += await yahoo_chart.news(q)
-    except YahooChartError as e:
-        return {**empty, "error": str(e)[:200]}
+        except YahooChartError as e:
+            logger.warning("market move news query %r failed: %s", q, e)
     headlines = fresh_headlines(items, now)
     if not headlines:
-        return {**empty, "error": "no_fresh_headlines"}
+        return {**empty, "error": f"no_fresh_headlines (raw={len(items)})"}
     try:
         out = await _extract_cause(market, subject, headlines)
     except Exception as e:  # noqa: BLE001 — timeout, 5xx, malformed JSON: no reason, no post

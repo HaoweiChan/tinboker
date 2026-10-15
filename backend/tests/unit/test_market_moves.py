@@ -13,6 +13,16 @@ from src.services.intraday_card import intraday_card_svg, segments
 from src.services.yahoo_chart import Intraday, Quote, YahooChartError
 
 TPE = ZoneInfo("Asia/Taipei")
+
+
+@pytest.fixture(autouse=True)
+def _no_local_feeds(monkeypatch):
+    """Unit tests never reach the RSS wires; tests that want headlines stub them."""
+    from src.services import market_news
+
+    async def none(market_id):
+        return []
+    monkeypatch.setattr(market_news, "headlines", none)
 OPEN = int(datetime(2026, 10, 14, 9, 0, tzinfo=TPE).timestamp())
 CLOSE = int(datetime(2026, 10, 14, 13, 30, tzinfo=TPE).timestamp())
 
@@ -397,7 +407,7 @@ async def test_stock_reason_searches_by_its_own_name(monkeypatch):
     monkeypatch.setattr(mm.yahoo_chart, "news", news)
     nvda = mm.BY_ID["NVDA"][1]
     out = await mm.find_cause(mm.MARKETS["US"], mm.subject_of(mm.MARKETS["US"], mm.Move(nvda, _day([95.0]), 2.0)), NOW)
-    assert queries == ["Nvidia", "NVDA"] and out["error"] == "no_fresh_headlines"
+    assert queries == ["Nvidia", "NVDA"] and out["error"] == "no_fresh_headlines (raw=0)"
 
 
 @pytest.mark.asyncio
@@ -838,3 +848,53 @@ async def test_yahoo_network_errors_and_hard_statuses_become_yahoo_errors(monkey
     with pytest.raises(YahooChartError, match="HTTP 404"):
         await yahoo_chart._get_json("https://y/chart", {})
     assert len(responses) == 1                                       # a 404 is not retried
+
+
+
+# ── local-language headlines ────────────────────────────────────────────────
+
+RSS = """<?xml version="1.0" encoding="UTF-8"?><rss version="2.0"><channel>
+<item><title>台股重挫逾400點 美債殖利率飆升</title><link>https://news.cnyes.com/a/1</link>
+<pubDate>Thu, 15 Oct 2026 01:40:00 GMT</pubDate></item>
+<item><title>no date</title><link>https://x/2</link></item>
+<item><title></title><link>https://x/3</link><pubDate>Thu, 15 Oct 2026 01:40:00 GMT</pubDate></item>
+</channel></rss>"""
+
+
+def test_parse_rss_keeps_dated_titled_items():
+    from src.services.market_news import parse_rss
+    out = parse_rss(RSS, "鉅亨網")
+    assert out == [{"title": "台股重挫逾400點 美債殖利率飆升", "publisher": "鉅亨網",
+                    "url": "https://news.cnyes.com/a/1", "published": 1792028400}]
+    assert parse_rss("<not xml", "x") == []
+
+
+@pytest.mark.asyncio
+async def test_tw_reason_reads_the_local_wires_even_when_yahoo_search_fails(monkeypatch):
+    from src.services import market_news
+    monkeypatch.setattr(mm.settings, "openrouter_api_key", "k")
+    t = int(NOW.timestamp()) - 600
+
+    async def wires(market_id):
+        assert market_id == "TW"
+        return [{"title": "台股重挫 美債殖利率飆升", "publisher": "鉅亨網", "url": "https://c/1", "published": t},
+                {"title": "殖利率急升 台股失守", "publisher": "經濟日報", "url": "https://u/1", "published": t - 60}]
+
+    async def yahoo_down(q, count=12):
+        raise YahooChartError("429")
+    seen = {}
+
+    async def extract(market, subject, headlines):
+        seen["publishers"] = [h["publisher"] for h in headlines]
+        return {"cause": "美債殖利率飆升", "support": [0, 1]}
+    monkeypatch.setattr(market_news, "headlines", wires)
+    monkeypatch.setattr(mm.yahoo_chart, "news", yahoo_down)
+    monkeypatch.setattr(mm, "_extract_cause", extract)
+    lead = mm.Move(mm.Instrument("^TWII", "加權指數"), _day([97.0]), 1.0)
+    out = await mm.find_cause(mm.MARKETS["TW"], mm.subject_of(mm.MARKETS["TW"], lead), NOW)
+    assert seen["publishers"] == ["鉅亨網", "經濟日報"]                 # newest first
+    assert (out["tier"], out["clause"]) == ("consensus", "主因美債殖利率飆升")   # two wires agree
+
+
+def test_tw_index_lane_is_the_taiex_alone():
+    assert [i.symbol for i in mm.MARKETS["TW"].indices] == ["^TWII"]    # ^TWOII is a Yahoo 404
