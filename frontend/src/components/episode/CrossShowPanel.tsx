@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Lock } from 'lucide-react';
+import { ChevronDown, Lock } from 'lucide-react';
 import { getSentimentDisplay } from '@/lib/sentiment';
 import { SectorExposureList } from '@/components/episode/SectorExposureList';
 import { getEpisodeCrossShow } from '@/services/api/mentions';
@@ -9,11 +9,26 @@ import { useStockPriceSinceMap, isRecentEpisode } from '@/hooks/useStockPriceSin
 import { useAppStore } from '@/store/useAppStore';
 import { ChangePct } from '@/components/topics/ChangePct';
 import type { CrossShowResponse } from '@/validation/schemas';
-import { CROSS_SHOW_LOCKED, crossShowLead, isOpposite, othersCounts, othersLean, stanceZh } from '../../../shared/crossShow.js';
+import { crossShowLead, isOpposite, othersCounts, othersLean, stanceZh } from '../../../shared/crossShow.js';
 
 type Subject = CrossShowResponse['subjects'][number];
 // Stock rows a non-member sees unblurred when the public route has no preview rows.
 const FREE_VISIBLE = 2;
+// Rows each list shows before 「顯示全部」, and blurred rows a non-member gets as a teaser.
+const LIST_LIMIT = 5;
+const BLURRED_TEASE = 3;
+
+const ShowAllToggle: React.FC<{ open: boolean; onToggle: () => void; label: string }> = ({ open, onToggle, label }) => (
+  <button
+    type="button"
+    onClick={onToggle}
+    aria-expanded={open}
+    className="mt-2 flex w-full items-center justify-center gap-1 rounded-md py-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+  >
+    {open ? '收合' : label}
+    <ChevronDown size={14} className={`transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
+  </button>
+);
 const subjectKey = (subject: Subject) => `${subject.mention_type}:${subject.ticker ?? subject.exposure_id}`;
 
 interface Props {
@@ -50,6 +65,9 @@ export const CrossShowPanel: React.FC<Props> = ({ episode, data, sectorPerf, sec
   // Members get every comparison; everyone else gets the public route's FREE_PREVIEW_ROWS.
   const comparisons = new Map((isMember ? detail?.rows ?? [] : data?.rows ?? []).map((r) => [subjectKey(r), r]));
 
+  const [showAllStocks, setShowAllStocks] = useState(false);
+  const [showAllThemes, setShowAllThemes] = useState(false);
+
   if (!data?.subjects.length || data.episode_id !== episode.id) return null;
   const tone = (stance: Parameters<typeof getSentimentDisplay>[0] | undefined) => getSentimentDisplay(stance ?? null, stockColorMode)?.toneClass ?? 'text-muted-foreground';
   const allTickers = data.subjects.filter((s) => s.mention_type === 'ticker' && s.ticker);
@@ -73,6 +91,45 @@ export const CrossShowPanel: React.FC<Props> = ({ episode, data, sectorPerf, sec
   }));
   const lead = <p className="text-sm text-muted-foreground leading-[1.65] mb-3">{crossShowLead(data)}</p>;
 
+  const clearStocks = tickers.filter((t) => !isBlurred(t));
+  const hiddenStocks = tickers.filter((t) => isBlurred(t));
+  const renderStockRow = (subject: Subject) => {
+    const row = comparisons.get(subjectKey(subject));
+    const lean = row ? othersLean(row) : null;
+    const ticker = subject.ticker!;
+    const change = isRecentEpisode(episode) ? null : priceSinceMap.get(ticker.toUpperCase()) ?? null;
+    const blurred = isBlurred(subject);
+    const others = blurred ? <span>其他 5 個節目 看多</span>
+      : !isMember && !row ? <span>其他節目沒有提到</span>
+      : !row ? <span>{detailFailed ? '其他節目：暫時無法載入' : detail ? '' : '其他節目：載入中…'}</span>
+        : row.others.shows === 0 ? <span>其他節目沒有提到</span>
+          : <span>
+            其他 {row.others.shows} 個節目
+            <span className={`ml-1 font-semibold ${tone(lean)}`}>{lean ? stanceZh(lean) : '看法分歧'}</span>
+            {isOpposite(row) && <span className="ml-1 text-primary">相反</span>}
+          </span>;
+    return (
+      <div
+        key={subjectKey(subject)}
+        aria-hidden={blurred || undefined}
+        className={`flex items-center gap-2 rounded-md border border-border/60 bg-muted/20 px-2.5 py-2 ${blurred ? 'blur-[3px] select-none pointer-events-none' : ''}`}
+      >
+        <div className="flex-1 min-w-0">
+          <Link to={`/stock/${encodeURIComponent(ticker)}`} className="block text-sm font-medium hover:underline truncate leading-snug">
+            {subject.name && subject.name !== ticker ? <>{subject.name}<span className="ml-1.5 font-mono text-2xs text-muted-foreground">{ticker}</span></> : ticker}
+          </Link>
+          {/* Never truncate: the stance at the end of this line is the point of it. */}
+          <span className="block text-2xs text-muted-foreground" title={row ? othersCounts(row.others) : undefined}>{others}</span>
+        </div>
+        <span className={`w-10 shrink-0 text-center text-xs font-semibold ${tone(subject.stance)}`}>{subject.stance ? stanceZh(subject.stance) : '—'}</span>
+        {/* ChangePct is a flex box, so text-right alone left it left-aligned. */}
+        <span className="w-16 shrink-0 flex justify-end"><ChangePct value={change} sizeClass="text-xs" /></span>
+        <span className="w-[18px] shrink-0 -mr-0.5" aria-hidden />
+      </div>
+    );
+  };
+  const shownThemes = showAllThemes ? themeExposures : themeExposures.slice(0, LIST_LIMIT);
+
   return (
     <>
       {tickers.length > 0 && (
@@ -88,49 +145,31 @@ export const CrossShowPanel: React.FC<Props> = ({ episode, data, sectorPerf, sec
             <span className="w-16 text-right">播出至今</span>
             <span className="w-[18px] -mr-0.5" aria-hidden />
           </div>
-          <div className="flex flex-col gap-1.5">
-            {tickers.map((subject) => {
-              const row = comparisons.get(subjectKey(subject));
-              const lean = row ? othersLean(row) : null;
-              const ticker = subject.ticker!;
-              const change = isRecentEpisode(episode) ? null : priceSinceMap.get(ticker.toUpperCase()) ?? null;
-              const blurred = isBlurred(subject);
-              const others = blurred ? <span>其他 5 個節目 看多</span>
-                : !isMember && !row ? <span>其他節目沒有提到</span>
-                : !row ? <span>{detailFailed ? '其他節目：暫時無法載入' : detail ? '' : '其他節目：載入中…'}</span>
-                  : row.others.shows === 0 ? <span>其他節目沒有提到</span>
-                    : <span>
-                      其他 {row.others.shows} 個節目
-                      <span className={`ml-1 font-semibold ${tone(lean)}`}>{lean ? stanceZh(lean) : '看法分歧'}</span>
-                      {isOpposite(row) && <span className="ml-1 text-primary">相反</span>}
-                    </span>;
-              return (
-                <div
-                  key={subjectKey(subject)}
-                  aria-hidden={blurred || undefined}
-                  className={`flex items-center gap-2 rounded-md border border-border/60 bg-muted/20 px-2.5 py-2 ${blurred ? 'blur-[3px] select-none pointer-events-none' : ''}`}
-                >
-                  <div className="flex-1 min-w-0">
-                    <Link to={`/stock/${encodeURIComponent(ticker)}`} className="block text-sm font-medium hover:underline truncate leading-snug">
-                      {subject.name && subject.name !== ticker ? <>{subject.name}<span className="ml-1.5 font-mono text-2xs text-muted-foreground">{ticker}</span></> : ticker}
+          {!isMember ? (
+            <>
+              <div className="flex flex-col gap-1.5">{clearStocks.map(renderStockRow)}</div>
+              {hiddenStocks.length > 0 && (
+                // A taste of the member table: a few blurred rows under the upgrade prompt.
+                <div className="relative mt-1.5">
+                  <div inert className="flex flex-col gap-1.5">{hiddenStocks.slice(0, BLURRED_TEASE).map(renderStockRow)}</div>
+                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-2.5 rounded-md bg-background/40 px-4 text-center">
+                    <p className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
+                      <Lock size={14} className="shrink-0" />升級會員才看得到另外 {hiddenStocks.length} 檔的節目比較
+                    </p>
+                    <Link to="/member" className="rounded-md bg-foreground px-4 py-2 text-xs font-semibold text-background hover:opacity-90 transition-opacity">
+                      升級會員
                     </Link>
-                    {/* Never truncate: the stance at the end of this line is the point of it. */}
-                    <span className="block text-2xs text-muted-foreground" title={row ? othersCounts(row.others) : undefined}>{others}</span>
                   </div>
-                  <span className={`w-10 shrink-0 text-center text-xs font-semibold ${tone(subject.stance)}`}>{subject.stance ? stanceZh(subject.stance) : '—'}</span>
-                  {/* ChangePct is a flex box, so text-right alone left it left-aligned. */}
-                  <span className="w-16 shrink-0 flex justify-end"><ChangePct value={change} sizeClass="text-xs" /></span>
-                  <span className="w-[18px] shrink-0 -mr-0.5" aria-hidden />
                 </div>
-              );
-            })}
-          </div>
-          {!isMember && (
-            <div className="mt-3 flex items-center gap-3 rounded-md border border-dashed border-border px-4 py-3">
-              <Lock size={15} className="shrink-0 text-muted-foreground" />
-              <p className="min-w-0 flex-1 text-xs leading-[1.5] text-muted-foreground">{CROSS_SHOW_LOCKED}</p>
-              <Link to="/member" className="shrink-0 rounded-md bg-foreground px-3 py-1.5 text-xs font-semibold text-background hover:opacity-90 transition-opacity">升級</Link>
-            </div>
+              )}
+            </>
+          ) : (
+            <>
+              <div className="flex flex-col gap-1.5">{(showAllStocks ? tickers : tickers.slice(0, LIST_LIMIT)).map(renderStockRow)}</div>
+              {tickers.length > LIST_LIMIT && (
+                <ShowAllToggle open={showAllStocks} onToggle={() => setShowAllStocks((v) => !v)} label={`顯示全部 ${tickers.length} 檔`} />
+              )}
+            </>
           )}
           <p className="text-2xs text-muted-foreground/80 mt-3 leading-[1.6]">
             比較的是各節目公開說法之間的異同，不是對股價的判斷。
@@ -142,7 +181,10 @@ export const CrossShowPanel: React.FC<Props> = ({ episode, data, sectorPerf, sec
         <section className="bg-card border border-border rounded-md p-5 sm:p-6 mb-3.5" aria-labelledby="cross-show-themes-title">
           <h3 id="cross-show-themes-title" className="heading-accent text-lg font-semibold text-foreground mb-3.5">提及題材</h3>
           {tickers.length === 0 && lead}
-          <SectorExposureList exposures={themeExposures} perfMap={sectorPerf} loading={sectorPerfLoading} notes={themeNotes} />
+          <SectorExposureList exposures={shownThemes} perfMap={sectorPerf} loading={sectorPerfLoading} notes={themeNotes} />
+          {themeExposures.length > LIST_LIMIT && (
+            <ShowAllToggle open={showAllThemes} onToggle={() => setShowAllThemes((v) => !v)} label={`顯示全部 ${themeExposures.length} 個題材`} />
+          )}
         </section>
       )}
     </>
