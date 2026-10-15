@@ -102,4 +102,5 @@ def analyze_transcript_with_workflow_api(
         "sector_exposure_ids": result.get("sector_exposure_ids") or [],
         "sector_ids": result.get("sector_ids") or [],
         "unresolved_market_trend_ids": result.get("unresolved_market_trend_ids") or [],
+        "generation_metadata": result.get("generation_metadata") or {},
     }

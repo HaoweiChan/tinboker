@@ -17,7 +17,8 @@ import statistics
 from dataclasses import asdict, dataclass, field
 from typing import Optional
 
-import httpx
+from curl_cffi.requests import AsyncSession
+from curl_cffi.requests.exceptions import RequestException
 
 from src.cache.redis_client import cache_get, cache_set
 
@@ -27,10 +28,17 @@ CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
 SPARK_URL = "https://query1.finance.yahoo.com/v8/finance/spark"
 SPARK_BATCH = 20
 SPARK_TTL = 120
+SPARK_CONCURRENCY = 6
+# The whole batched scan, not one request: every theme's members is ~30 batches, and a
+# serial, retrying walk over them outlived Cloudflare's 100s edge timeout on dev.
+SPARK_BUDGET = 30.0
 NEWS_URL = "https://query1.finance.yahoo.com/v1/finance/search"
-# Without a browser UA the endpoint answers 429 to most datacentre IPs.
-_HEADERS = {"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
-                          "(KHTML, like Gecko) Chrome/126.0 Safari/537.36"}
+# Yahoo answers 429 to plain Python HTTP clients from datacenter IPs — verified on dev
+# 2026-10-15, every chart call from the VPS was a 429 over httpx. It fingerprints the
+# TLS handshake, not the User-Agent, so the request has to look like a browser's:
+# curl_cffi impersonating Chrome, the same fix yfinance (already a dependency here)
+# ships for the same 429s.
+_IMPERSONATE = "chrome"
 _TIMEOUT = 10.0
 _RETRIES = 2
 INTRADAY_TTL = 60
@@ -90,20 +98,20 @@ class Intraday:
         return Intraday(self.symbol, self.tz, self.prev_close, self.session_start, self.session_end, pts)
 
 
-async def _get_json(url: str, params: dict) -> dict:
+async def _get_json(url: str, params: dict, retries: int = _RETRIES) -> dict:
     last: Exception = YahooChartError("not attempted")
-    for attempt in range(_RETRIES + 1):
+    for attempt in range(retries + 1):
         try:
-            async with httpx.AsyncClient(timeout=_TIMEOUT, headers=_HEADERS) as client:
+            async with AsyncSession(impersonate=_IMPERSONATE, timeout=_TIMEOUT) as client:
                 resp = await client.get(url, params=params)
             if resp.status_code == 200:
                 return resp.json()
             last = YahooChartError(f"yahoo {url} {params} -> HTTP {resp.status_code}")
             if resp.status_code not in (429, 500, 502, 503, 504):
                 break
-        except (httpx.HTTPError, ValueError) as e:
+        except (RequestException, ValueError) as e:
             last = YahooChartError(f"yahoo {url} {params} -> {type(e).__name__}: {e}")
-        if attempt < _RETRIES:
+        if attempt < retries:
             await asyncio.sleep(1.5 * (attempt + 1))
     logger.warning("%s", last)
     raise last
@@ -217,10 +225,11 @@ def parse_spark(payload: dict) -> dict[str, Quote]:
     return out
 
 
-async def quotes(symbols: list[str]) -> dict[str, Quote]:
+async def quotes(symbols: list[str], budget: float = SPARK_BUDGET) -> dict[str, Quote]:
     """Last price vs previous close for many symbols, 20 per request — what a basket or
-    a watchlist scan needs, at a fraction of one chart call per name. A failed batch
-    drops its symbols rather than the whole scan."""
+    a watchlist scan needs, at a fraction of one chart call per name. Batches run
+    ``SPARK_CONCURRENCY`` at a time with no retries, under one ``SPARK_BUDGET`` for the
+    whole scan; a failed or late batch drops its symbols rather than the scan."""
     out: dict[str, Quote] = {}
     todo = []
     for sym in dict.fromkeys(symbols):
@@ -229,14 +238,26 @@ async def quotes(symbols: list[str]) -> dict[str, Quote]:
             out[sym] = Quote(**json.loads(cached))
         else:
             todo.append(sym)
-    for i in range(0, len(todo), SPARK_BATCH):
-        batch = todo[i:i + SPARK_BATCH]
-        try:
-            got = parse_spark(await _get_json(SPARK_URL, {"symbols": ",".join(batch), "range": "1d",
-                                                          "interval": "5m"}))
-        except YahooChartError:
-            continue
-        for sym, q in got.items():
+    gate = asyncio.Semaphore(SPARK_CONCURRENCY)
+
+    async def fetch(batch: list[str]) -> dict[str, Quote]:
+        async with gate:
+            try:
+                return parse_spark(await _get_json(
+                    SPARK_URL, {"symbols": ",".join(batch), "range": "1d", "interval": "5m"}, retries=0))
+            except YahooChartError:
+                return {}
+
+    tasks = [asyncio.create_task(fetch(todo[i:i + SPARK_BATCH])) for i in range(0, len(todo), SPARK_BATCH)]
+    if not tasks:
+        return out
+    done, late = await asyncio.wait(tasks, timeout=budget)
+    for t in late:
+        t.cancel()
+    if late:
+        logger.warning("yahoo quotes: %d of %d batches missed the %.0fs budget", len(late), len(tasks), budget)
+    for t in done:
+        for sym, q in t.result().items():
             out[sym] = q
             await cache_set(f"yahoo:quote:{sym}", json.dumps(asdict(q)), SPARK_TTL)
     return out

@@ -8,7 +8,12 @@ This module handles generating summaries, SVG, and tickers from transcripts.
 from ..config import PipelineConfig
 from ..episode_data import EpisodeData
 from ..service_container import ServiceContainer
-from ..utils import extract_tags_and_tickers, extract_tickers_from_markdown
+from ..utils import (
+    extract_tags_and_tickers,
+    extract_tickers_from_markdown,
+    has_complete_regen_provenance,
+    retain_episode_audio,
+)
 
 
 class SummaryNotPersistableError(RuntimeError):
@@ -21,7 +26,9 @@ class SummaryNotPersistableError(RuntimeError):
     """
 
 
-def assert_summary_persistable(episode_data: EpisodeData) -> None:
+def assert_summary_persistable(
+    episode_data: EpisodeData, *, require_generated_provenance: bool = False
+) -> None:
     """Gate persistence on a real, self-consistent summary.
 
     A failed external summarization falls back to the placeholder summarizer,
@@ -49,6 +56,14 @@ def assert_summary_persistable(episode_data: EpisodeData) -> None:
     if not summary_text:
         raise SummaryNotPersistableError(
             "Refusing to persist: summary text is empty."
+        )
+
+    if require_generated_provenance and not has_complete_regen_provenance(
+        summary_result.get("generation_metadata")
+    ):
+        raise SummaryNotPersistableError(
+            "Refusing summarize rerun before artifact upload: complete generated-model "
+            "provenance is missing."
         )
 
     # Every related ticker must appear as #ticker:SYMBOL in the summary body. In
@@ -95,6 +110,25 @@ def generate_summary(
     # Need transcript
     if not episode_data.transcript_text:
         raise ValueError("Transcript not available for summarization")
+
+    if config.rerun_from == "summarize":
+        existing_urls = episode_data.gcs_urls or {}
+        if not existing_urls.get("transcript_url"):
+            raise SummaryNotPersistableError(
+                "Refusing summarize rerun: existing transcript artifact URL is missing."
+            )
+        # A summarize-only run cannot recreate audio. Require the existing MP3
+        # whenever retention says it belongs in the normal artifact set, and
+        # also reject an explicit no-audio conversion unless that MP3 already
+        # exists. This keeps the row complete for the regular ingest watcher.
+        needs_mp3 = (
+            not config.store_audio
+            or retain_episode_audio(episode_data.api_data, config.store_audio)
+        )
+        if needs_mp3 and not existing_urls.get("mp3_url"):
+            raise SummaryNotPersistableError(
+                "Refusing summarize rerun: required existing MP3 artifact URL is missing."
+            )
     
     episode_title = episode_data.api_data.get('title', 'Untitled Episode')
     print(f"  📝 Summarizing: {episode_title}")
@@ -150,5 +184,7 @@ def generate_summary(
     # Postgres/wiki in the later steps) when the summary is a placeholder or fails
     # the ticker/summary consistency check. Raising here — before any write step —
     # is what keeps a failed run from overwriting previously-good content.
-    assert_summary_persistable(episode_data)
+    assert_summary_persistable(
+        episode_data, require_generated_provenance=config.rerun_from == "summarize"
+    )
 

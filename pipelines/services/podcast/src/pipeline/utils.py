@@ -319,6 +319,7 @@ def create_episode_object(
         ticker_marp_markdown_public_url=gcs_urls.get('ticker_marp_markdown_public_url'),
         related_tickers=related_tickers,
         key_insights=key_insights,
+        generation_metadata=(summary_result.get('generation_metadata') if summary_result else None),
         social_cards=summary_result.get('social_cards', []) if summary_result else [],
         social_thread=summary_result.get('social_thread') if summary_result else None,
         skipped_segments=summary_result.get('skipped_segments', []) if summary_result else [],

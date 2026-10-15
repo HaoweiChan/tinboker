@@ -55,6 +55,55 @@ def test_no_provider_key_when_the_env_var_is_unset(captured, monkeypatch):
     assert "provider" not in client.kwargs["extra_body"]
 
 
+def test_generated_provenance_uses_response_identity_and_hashes_only(monkeypatch):
+    import hashlib
+    from types import SimpleNamespace
+
+    from src.podcast.content_builder import graph
+
+    response = SimpleNamespace(
+        content='{"title":"generated article"}',
+        response_metadata={"model_name": "actual/provider-model", "provider": "actual-provider"},
+    )
+    client = SimpleNamespace(invoke=lambda *a, **k: response)
+    monkeypatch.setattr(llm, "_model_name", lambda role: "openrouter:requested/model")
+    monkeypatch.setattr(llm, "get_model", lambda role: client)
+    monkeypatch.setattr(llm, "_json_kwargs", lambda model: {})
+    calls = []
+    with llm.generation_context(None, calls):
+        result = llm.invoke_json("writer", [{"role": "user", "content": "private prompt"}])
+    metadata = graph._generation_metadata(calls)
+
+    assert result == {"title": "generated article"}
+    writer = metadata["roles"]["writer"]
+    assert writer["model"] == "actual/provider-model"
+    assert writer["model_evidence"] == "response"
+    assert writer["provider"] == "actual-provider"
+    assert writer["provider_evidence"] == "response"
+    assert writer["output_sha256"] == hashlib.sha256(response.content.encode()).hexdigest()
+    assert "private prompt" not in repr(metadata)
+    assert "generated article" not in repr(metadata)
+
+
+def test_malformed_retries_do_not_create_generated_provenance(monkeypatch):
+    from types import SimpleNamespace
+
+    response = SimpleNamespace(
+        content="not-json", response_metadata={"model_name": "actual/model", "provider": "actual"},
+    )
+    client = SimpleNamespace(invoke=lambda *a, **k: response)
+    monkeypatch.setattr(llm, "_model_name", lambda role: "openrouter:requested/model")
+    monkeypatch.setattr(llm, "get_model", lambda role: client)
+    monkeypatch.setattr(llm, "_json_kwargs", lambda model: {})
+    monkeypatch.setattr(llm.time, "sleep", lambda _: None)
+    calls = []
+
+    with llm.generation_context(None, calls), pytest.raises(ValueError, match="unparseable"):
+        llm.invoke_json("writer", [{"role": "user", "content": "prompt"}])
+
+    assert calls == []
+
+
 def test_local_prefix_points_the_client_at_our_own_server(captured, monkeypatch):
     monkeypatch.setenv("EXTRACTOR_MODEL", "local:qwen3:30b-a3b-instruct-2507-q4_K_M")
     monkeypatch.setenv("LOCAL_LLM_BASE_URL", "http://mac-mini:11434/v1")

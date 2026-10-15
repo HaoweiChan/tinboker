@@ -30,6 +30,20 @@ def _episode_data(summary_result, tickers=None) -> EpisodeData:
     return ed
 
 
+def _generated_provenance():
+    required = ("extractor", "writer", "key_insights", "ticker_extractor", "marp_writer")
+    return {
+        "version": 1,
+        "roles": {
+            role: {
+                "source": "generated", "provider": "openrouter", "model": "actual/model",
+                "output_sha256": "a" * 64,
+            }
+            for role in required
+        },
+    }
+
+
 # --- assert_summary_persistable (the gate itself) ---------------------------
 
 def test_placeholder_result_is_rejected():
@@ -68,13 +82,27 @@ def test_real_summary_without_tickers_passes():
     assert_summary_persistable(ed)  # no tickers -> ticker check is N/A
 
 
+def test_summarize_rerun_requires_complete_model_provenance_before_upload():
+    ed = _episode_data({"summary_text": "有效的新摘要。"})
+    with pytest.raises(SummaryNotPersistableError, match="provenance"):
+        assert_summary_persistable(ed, require_generated_provenance=True)
+
+
 # --- generate_summary gates BEFORE returning (i.e. before write steps) ------
 
 def _config() -> PipelineConfig:
     cfg = MagicMock(spec=PipelineConfig)
     cfg.rerun_from = "summarize"
+    cfg.store_audio = True
     cfg.podcast_name = "Gooaye"
     return cfg
+
+
+def _complete_existing_urls():
+    return {
+        "transcript_url": "https://media.test/transcript.json",
+        "mp3_url": "https://media.test/audio.mp3",
+    }
 
 
 def test_generate_summary_raises_on_placeholder_fallback():
@@ -92,6 +120,7 @@ def test_generate_summary_raises_on_placeholder_fallback():
 
     ed = EpisodeData(api_data={"title": "EP671"}, podcast_name="Gooaye", language="zh")
     ed.transcript_text = "long transcript ..."
+    ed.gcs_urls = _complete_existing_urls()
 
     with pytest.raises(SummaryNotPersistableError):
         generate_summary(_config(), services, ed)
@@ -104,11 +133,26 @@ def test_generate_summary_succeeds_on_real_summary():
         "summary_text": "看好 [輝達](#ticker:NVDA) 的後市表現。",
         "svg_content": "<svg/>",
         "related_tickers": ["NVDA"],
+        "generation_metadata": _generated_provenance(),
     }
 
     ed = EpisodeData(api_data={"title": "EP"}, podcast_name="Gooaye", language="zh")
     ed.transcript_text = "long transcript ..."
+    ed.gcs_urls = _complete_existing_urls()
 
     generate_summary(_config(), services, ed)  # does not raise
     assert ed.summary_result is not None
     assert "NVDA" in [t.upper() for t in ed.tickers]
+
+
+def test_summarize_rerun_missing_mp3_fails_before_model_call():
+    services = MagicMock(spec=ServiceContainer)
+    services.summarize_service = MagicMock()
+    ed = EpisodeData(api_data={"title": "EP"}, podcast_name="Gooaye", language="zh")
+    ed.transcript_text = "long transcript ..."
+    ed.gcs_urls = {"transcript_url": "https://media.test/transcript.json"}
+
+    with pytest.raises(SummaryNotPersistableError, match="MP3 artifact URL is missing"):
+        generate_summary(_config(), services, ed)
+
+    services.summarize_service.generate_summary_from_text.assert_not_called()

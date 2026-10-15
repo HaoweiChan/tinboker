@@ -100,6 +100,10 @@ def social_enabled_for(podcast_name: str | None, *, timeout: float = 10.0) -> bo
     because losing them silently for every show is worse than generating a few that the
     platform will refuse to publish anyway.
     """
+    forced = os.getenv("PODCAST_SOCIAL_ENABLED")
+    if forced is not None:
+        return forced.strip().lower() in {"1", "true", "yes", "on"}
+
     global _SOCIAL_ENABLED_CACHE
     if _SOCIAL_ENABLED_CACHE is None:
         items = fetch_sources("podcast", timeout=timeout)
