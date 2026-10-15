@@ -279,7 +279,7 @@ def test_cross_show_compares_sectors_by_id_and_keeps_public_subjects_private_com
     assert by["semi"]["others"] == {"shows": 1, "mentions": 1, "bull": 1, "neutral": 0, "bear": 0, "unknown": 0, "lean": "BULLISH"}
     assert by["ai"]["relation"] == "opposite"
     teaser = _call(api.get_episode_cross_show_teaser("ep"))
-    assert teaser["rows"] == []  # theme comparisons are never previewed
+    assert {r["exposure_id"] for r in teaser["rows"]} == {"semi", "ai"}  # themes preview too
     assert teaser["compared"] == 2 and teaser["opposite"] == 1
     assert teaser["subjects"] == body["subjects"]
     assert all(set(s) == {"mention_type", "ticker", "exposure_id", "name", "stance"}

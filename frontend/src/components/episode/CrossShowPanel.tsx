@@ -12,11 +12,29 @@ import type { CrossShowResponse } from '@/validation/schemas';
 import { crossShowLead, isOpposite, othersCounts, othersLean, stanceZh } from '../../../shared/crossShow.js';
 
 type Subject = CrossShowResponse['subjects'][number];
-// Stock rows a non-member sees unblurred when the public route has no preview rows.
+// Rows of each kind a non-member sees unblurred when the public route previews none.
 const FREE_VISIBLE = 2;
 // Rows each list shows before 「顯示全部」, and blurred rows a non-member gets as a teaser.
 const LIST_LIMIT = 5;
 const BLURRED_TEASE = 3;
+
+/** A few blurred, inert rows under 「升級會員才看得到」 and a button to the member page. */
+const LockedTeaser: React.FC<{ detail: string; children: React.ReactNode }> = ({ detail, children }) => (
+  <div className="relative mt-1.5">
+    <div inert aria-hidden className="blur-[3px] select-none">{children}</div>
+    <div className="absolute inset-0 flex flex-col items-center justify-center gap-2.5 rounded-md bg-background/40 px-4 text-center">
+      <div>
+        <p className="flex items-center justify-center gap-1.5 text-sm font-semibold text-foreground">
+          <Lock size={14} className="shrink-0" />升級會員才看得到
+        </p>
+        <p className="mt-0.5 text-xs text-muted-foreground">{detail}</p>
+      </div>
+      <Link to="/member" className="rounded-md bg-foreground px-4 py-2 text-xs font-semibold text-background hover:opacity-90 transition-opacity">
+        升級會員
+      </Link>
+    </div>
+  </div>
+);
 
 const ShowAllToggle: React.FC<{ open: boolean; onToggle: () => void; label: string }> = ({ open, onToggle, label }) => (
   <button
@@ -73,11 +91,19 @@ export const CrossShowPanel: React.FC<Props> = ({ episode, data, sectorPerf, sec
   const allTickers = data.subjects.filter((s) => s.mention_type === 'ticker' && s.ticker);
   // Non-members: the previewed stocks lead (or the first two when nothing was compared);
   // the rest render blurred, with placeholder comparison text, under the upgrade prompt.
-  const previewKeys = new Set(isMember ? [] : (data.rows.length ? data.rows.map(subjectKey) : allTickers.slice(0, FREE_VISIBLE).map(subjectKey)));
-  const tickers = isMember ? allTickers
-    : [...allTickers.filter((t) => previewKeys.has(subjectKey(t))), ...allTickers.filter((t) => !previewKeys.has(subjectKey(t)))];
+  const allThemes = data.subjects.filter((s) => s.mention_type === 'sector' && s.exposure_id);
+  // Per kind: the public route's preview rows, or the first FREE_VISIBLE when it has none.
+  const previewOf = (subjects: Subject[]) => {
+    const keys = new Set(subjects.map(subjectKey));
+    const previewed = data.rows.map(subjectKey).filter((k) => keys.has(k));
+    return previewed.length ? previewed : subjects.slice(0, FREE_VISIBLE).map(subjectKey);
+  };
+  const previewKeys = new Set(isMember ? [] : [...previewOf(allTickers), ...previewOf(allThemes)]);
   const isBlurred = (subject: Subject) => !isMember && !previewKeys.has(subjectKey(subject));
-  const themes = data.subjects.filter((s) => s.mention_type === 'sector' && s.exposure_id);
+  const previewFirst = (subjects: Subject[]) => isMember ? subjects
+    : [...subjects.filter((t) => !isBlurred(t)), ...subjects.filter(isBlurred)];
+  const tickers = previewFirst(allTickers);
+  const themes = previewFirst(allThemes);
   // The theme rows reuse the episode's own exposure records (icon, constituents) for the
   // themes content_mentions lists; a theme missing from them still gets a bare row.
   const exposureById = new Map((episode.sector_exposures ?? []).map((e) => [e.exposure_id, e]));
@@ -86,6 +112,7 @@ export const CrossShowPanel: React.FC<Props> = ({ episode, data, sectorPerf, sec
     mention_text: '', confidence: 0, resolved_tickers: [], total_matches: 0,
   });
   const themeNotes = new Map(themes.flatMap((t) => {
+    if (isBlurred(t)) return [[t.exposure_id!, '5 個節目也談到'] as const];  // placeholder under the blur
     const row = comparisons.get(subjectKey(t));
     return row && row.others.shows > 0 ? [[t.exposure_id!, `${row.others.shows} 個節目也談到`] as const] : [];
   }));
@@ -111,8 +138,7 @@ export const CrossShowPanel: React.FC<Props> = ({ episode, data, sectorPerf, sec
     return (
       <div
         key={subjectKey(subject)}
-        aria-hidden={blurred || undefined}
-        className={`flex items-center gap-2 rounded-md border border-border/60 bg-muted/20 px-2.5 py-2 ${blurred ? 'blur-[3px] select-none pointer-events-none' : ''}`}
+        className="flex items-center gap-2 rounded-md border border-border/60 bg-muted/20 px-2.5 py-2"
       >
         <div className="flex-1 min-w-0">
           <Link to={`/stock/${encodeURIComponent(ticker)}`} className="block text-sm font-medium hover:underline truncate leading-snug">
@@ -129,6 +155,8 @@ export const CrossShowPanel: React.FC<Props> = ({ episode, data, sectorPerf, sec
     );
   };
   const shownThemes = showAllThemes ? themeExposures : themeExposures.slice(0, LIST_LIMIT);
+  const clearThemes = themeExposures.filter((_, i) => !isBlurred(themes[i]));
+  const hiddenThemes = themeExposures.filter((_, i) => isBlurred(themes[i]));
 
   return (
     <>
@@ -149,21 +177,9 @@ export const CrossShowPanel: React.FC<Props> = ({ episode, data, sectorPerf, sec
             <>
               <div className="flex flex-col gap-1.5">{clearStocks.map(renderStockRow)}</div>
               {hiddenStocks.length > 0 && (
-                // A taste of the member table: a few blurred rows under the upgrade prompt.
-                <div className="relative mt-1.5">
-                  <div inert className="flex flex-col gap-1.5">{hiddenStocks.slice(0, BLURRED_TEASE).map(renderStockRow)}</div>
-                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-2.5 rounded-md bg-background/40 px-4 text-center">
-                    <div>
-                      <p className="flex items-center justify-center gap-1.5 text-sm font-semibold text-foreground">
-                        <Lock size={14} className="shrink-0" />升級會員才看得到
-                      </p>
-                      <p className="mt-0.5 text-xs text-muted-foreground">另外 {hiddenStocks.length} 檔與其他節目的看法對照</p>
-                    </div>
-                    <Link to="/member" className="rounded-md bg-foreground px-4 py-2 text-xs font-semibold text-background hover:opacity-90 transition-opacity">
-                      升級會員
-                    </Link>
-                  </div>
-                </div>
+                <LockedTeaser detail={`另外 ${hiddenStocks.length} 檔與其他節目的看法對照`}>
+                  <div className="flex flex-col gap-1.5">{hiddenStocks.slice(0, BLURRED_TEASE).map(renderStockRow)}</div>
+                </LockedTeaser>
               )}
             </>
           ) : (
@@ -184,9 +200,22 @@ export const CrossShowPanel: React.FC<Props> = ({ episode, data, sectorPerf, sec
         <section className="bg-card border border-border rounded-md p-5 sm:p-6 mb-3.5" aria-labelledby="cross-show-themes-title">
           <h3 id="cross-show-themes-title" className="heading-accent text-lg font-semibold text-foreground mb-3.5">提及題材</h3>
           {tickers.length === 0 && lead}
-          <SectorExposureList exposures={shownThemes} perfMap={sectorPerf} loading={sectorPerfLoading} notes={themeNotes} />
-          {themeExposures.length > LIST_LIMIT && (
-            <ShowAllToggle open={showAllThemes} onToggle={() => setShowAllThemes((v) => !v)} label={`顯示全部 ${themeExposures.length} 個題材`} />
+          {!isMember ? (
+            <>
+              <SectorExposureList exposures={clearThemes} perfMap={sectorPerf} loading={sectorPerfLoading} notes={themeNotes} />
+              {hiddenThemes.length > 0 && (
+                <LockedTeaser detail={`另外 ${hiddenThemes.length} 個題材在其他節目的討論`}>
+                  <SectorExposureList exposures={hiddenThemes.slice(0, BLURRED_TEASE)} perfMap={sectorPerf} loading={sectorPerfLoading} notes={themeNotes} />
+                </LockedTeaser>
+              )}
+            </>
+          ) : (
+            <>
+              <SectorExposureList exposures={shownThemes} perfMap={sectorPerf} loading={sectorPerfLoading} notes={themeNotes} />
+              {themeExposures.length > LIST_LIMIT && (
+                <ShowAllToggle open={showAllThemes} onToggle={() => setShowAllThemes((v) => !v)} label={`顯示全部 ${themeExposures.length} 個題材`} />
+              )}
+            </>
           )}
         </section>
       )}
