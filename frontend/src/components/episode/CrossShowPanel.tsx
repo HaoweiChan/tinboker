@@ -153,9 +153,12 @@ export const CrossShowPanel: React.FC<Props> = ({ episode, data, sectorPerf, sec
                 <div className="relative mt-1.5">
                   <div inert className="flex flex-col gap-1.5">{hiddenStocks.slice(0, BLURRED_TEASE).map(renderStockRow)}</div>
                   <div className="absolute inset-0 flex flex-col items-center justify-center gap-2.5 rounded-md bg-background/40 px-4 text-center">
-                    <p className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
-                      <Lock size={14} className="shrink-0" />升級會員才看得到另外 {hiddenStocks.length} 檔的節目比較
-                    </p>
+                    <div>
+                      <p className="flex items-center justify-center gap-1.5 text-sm font-semibold text-foreground">
+                        <Lock size={14} className="shrink-0" />升級會員才看得到
+                      </p>
+                      <p className="mt-0.5 text-xs text-muted-foreground">另外 {hiddenStocks.length} 檔與其他節目的看法對照</p>
+                    </div>
                     <Link to="/member" className="rounded-md bg-foreground px-4 py-2 text-xs font-semibold text-background hover:opacity-90 transition-opacity">
                       升級會員
                     </Link>
