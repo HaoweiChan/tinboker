@@ -502,28 +502,28 @@ def _floor(lane: str) -> float:
 
 
 async def scan(instruments, today: date, now: datetime, floor_pct: float) -> dict:
-    """Each instrument right now (full intraday + sigma), and which count as a big move."""
-    rows, moves = [], []
-    for inst in instruments:
+    """Each instrument right now (full intraday + sigma), and which count as a big move.
+    Instruments are fetched concurrently: four US indices one after another, each
+    allowed its retries, was enough to outlive a 100s request."""
+    async def one(inst: Instrument) -> tuple[dict, Optional[Move]]:
         try:
             day = await yahoo_chart.intraday(inst.symbol)
         except YahooChartError as e:
-            rows.append({"id": inst.id, "error": str(e)[:200]})
-            continue
+            return {"id": inst.id, "error": str(e)[:200]}, None
         if not is_today(day, today, now):
-            rows.append({"id": inst.id, "skipped": "not_trading_today"})
-            continue
+            return {"id": inst.id, "skipped": "not_trading_today"}, None
         try:
             sigma = await yahoo_chart.sigma(inst.symbol)
         except YahooChartError:
             sigma = None  # the floor alone still guards
         big = is_big(day, sigma, k=settings.market_move_sigma, floor_pct=floor_pct)
         move = Move(inst, day, sigma)
-        rows.append({"id": inst.id, "pct": round(day.pct, 2), "sigma": sigma and round(sigma, 2),
-                     "z": move.z and round(move.z, 2), "big": big})
-        if big:
-            moves.append(move)
-    return {"rows": rows, "moves": moves}
+        row = {"id": inst.id, "pct": round(day.pct, 2), "sigma": sigma and round(sigma, 2),
+               "z": move.z and round(move.z, 2), "big": big}
+        return row, move if big else None
+
+    results = await asyncio.gather(*(one(i) for i in instruments))
+    return {"rows": [r for r, _ in results], "moves": [m for _, m in results if m]}
 
 
 async def _prefilter(market: Market, pool: list[Instrument], today: date, now: datetime,
