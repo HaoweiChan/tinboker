@@ -389,6 +389,15 @@ try {
     assert.ok((await bot.text()).includes('id="root"'), 'the SPA body is still served');
     const person = await call('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/140 Safari/537.36');
     assert.equal(person.status, 200, 'people are not given a 404 page by the edge');
+
+    // A missing hashed bundle is a 404, never the SPA shell (the service worker would
+    // precache that HTML as the JS bundle); a present one passes through untouched.
+    const asset = (next) => mw.onRequest({ request: new Request(`${ORIGIN}/assets/index-gone.js`), next, env: { API_ORIGIN: API } });
+    const missing = await asset(async () => shell());
+    assert.equal(missing.status, 404, 'missing /assets/* is a 404, not the SPA shell');
+    assert.equal(missing.headers.get('cache-control'), 'no-store');
+    const js = new Response('export {}', { status: 200, headers: { 'content-type': 'application/javascript' } });
+    assert.equal(await asset(async () => js), js, 'a real bundle passes through');
     globalThis.fetch = inner;
   }
 

@@ -719,6 +719,21 @@ export function renderPage(meta) {
 // gets a proper card even though the page is not indexed.
 export async function onRequest(context) {
   const url = new URL(context.request.url);
+  // A hashed bundle that is not (yet) on the edge used to get the SPA shell back as a
+  // 200 text/html, under /assets/*'s year-long immutable Cache-Control. The service
+  // worker precached that HTML as the JS bundle during a deploy and the app stayed a
+  // white page until the next update. A real 404 makes the precache install fail and
+  // retry instead.
+  if (url.pathname.startsWith('/assets/')) {
+    const asset = await context.next();
+    if ((asset.headers.get('content-type') || '').includes('text/html')) {
+      return new Response('Not found', {
+        status: 404,
+        headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' },
+      });
+    }
+    return asset;
+  }
   const { res, noindex } = await handle(context, url);
   if (PROD_HOSTS.has(url.hostname) && !noindex) return res;
   try {
