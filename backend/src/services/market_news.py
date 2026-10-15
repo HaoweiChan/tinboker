@@ -12,8 +12,10 @@ Best-effort like the rest: a feed that fails is logged and skipped.
 from __future__ import annotations
 
 import asyncio
+import html
 import json
 import logging
+import re
 import xml.etree.ElementTree as ET
 from email.utils import parsedate_to_datetime
 
@@ -24,17 +26,25 @@ from src.cache.redis_client import cache_get, cache_set
 logger = logging.getLogger(__name__)
 
 TTL = 120
+SUMMARY_CHARS = 160          # the lede: where a wire puts the "why" its headline leaves out
+_TAGS = re.compile(r"<[^>]+>")
 FEEDS: dict[str, list[tuple[str, str]]] = {
     "TW": [
         ("鉅亨網", "https://news.cnyes.com/rss/v1/news/category/tw_stock"),
         ("鉅亨網", "https://news.cnyes.com/rss/v1/news/category/headline"),
         ("經濟日報", "https://money.udn.com/rssfeed/news/1001/5590?ch=money"),
+        # Yahoo奇摩股市 syndicates the wires (中央社, 鉅亨, 經濟日報, …); each item's
+        # <source> names the original, which is the publisher that counts.
+        ("Yahoo奇摩股市", "https://tw.stock.yahoo.com/rss?category=tw-market"),
     ],
 }
 
 
 def parse_rss(xml: str, publisher: str) -> list[dict]:
-    """RSS 2.0 items → the same headline shape ``yahoo_chart.news`` returns."""
+    """RSS 2.0 items → the same headline shape ``yahoo_chart.news`` returns, plus the
+    item's lede as ``summary`` (headlines say how far; the lede usually says why). An
+    item's own ``<source>`` overrides the feed's publisher — an aggregator's copy of
+    a 中央社 story is 中央社's."""
     out = []
     try:
         root = ET.fromstring(xml)
@@ -47,8 +57,11 @@ def parse_rss(xml: str, publisher: str) -> list[dict]:
             published = int(parsedate_to_datetime(item.findtext("pubDate") or "").timestamp())
         except (TypeError, ValueError):
             continue
+        summary = html.unescape(_TAGS.sub("", item.findtext("description") or "")).strip()
+        source = (item.findtext("source") or "").strip()
         if title and link:
-            out.append({"title": title, "publisher": publisher, "url": link, "published": published})
+            out.append({"title": title, "publisher": source or publisher, "url": link, "published": published,
+                        "summary": " ".join(summary.split())[:SUMMARY_CHARS]})
     return out
 
 

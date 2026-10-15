@@ -369,17 +369,18 @@ def subject_of(market: Market, move: Move | ThemeMove) -> Subject:
 
 CAUSE_SYSTEM = """你負責從新聞標題中，找出某個股價指數、個股或題材族群今天盤中大幅波動的原因。
 
-只能根據提供的標題判斷，不可使用標題以外的知識或推測。
+只能根據提供的新聞（標題，以及有附上時「｜」後的摘要）判斷，不可使用新聞以外的知識或推測。標題常只寫漲跌幅，原因多半在摘要裡。
 回傳 JSON：{"cause": "...", "support": [標題編號...]}
 - cause：繁體中文名詞短語，30 字以內，具體描述驅動因素本身（事件或市場擔憂的事），例如「美國公債殖利率走升」「輝達財報優於預期」「市場擔憂SpaceX籌資400億美元購買輝達晶片」。要能直接接在「主因」或「市場推測與…有關」中間讀通。不要寫漲跌幅、不要加句號、不要寫「可能」「市場推測」等語氣詞。
-- support：明確把「這個標的今天的漲跌」歸因於這個因素的標題編號（標的是指數時，講整個市場今天漲跌的標題也算；標的是題材族群時，講族群內個股或整個產業今天漲跌的標題也算）。
-- 沒有任何標題明確解釋這次波動時，回傳 {"cause": "", "support": []}。寧可留白，不要猜。"""
+- support：標題或摘要明確把「這個標的今天的漲跌」歸因於這個因素的新聞編號（標的是指數時，講整個市場今天漲跌的標題也算；標的是題材族群時，講族群內個股或整個產業今天漲跌的標題也算）。
+- 沒有任何新聞明確解釋這次波動時，回傳 {"cause": "", "support": []}。寧可留白，不要猜。"""
 
 
 async def _extract_cause(market: Market, subject: Subject, headlines: list[dict]) -> dict:
-    listing = "\n".join(f"[{i}] {h['publisher'] or '?'}：{h['title']}" for i, h in enumerate(headlines))
+    listing = "\n".join(f"[{i}] {h['publisher'] or '?'}：{h['title']}"
+                        + (f"｜{h['summary']}" if h.get("summary") else "") for i, h in enumerate(headlines))
     user = (f"市場：{market.name}；{subject.kind}：{subject.label}"
-            f"盤中{'上漲' if subject.pct >= 0 else '下跌'} {abs(subject.pct):.2f}%。\n\n標題：\n{listing}")
+            f"盤中{'上漲' if subject.pct >= 0 else '下跌'} {abs(subject.pct):.2f}%。\n\n新聞：\n{listing}")
     async with httpx.AsyncClient(timeout=45.0) as client:
         resp = await client.post(
             "https://openrouter.ai/api/v1/chat/completions",
