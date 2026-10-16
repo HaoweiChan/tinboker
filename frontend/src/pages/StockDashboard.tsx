@@ -33,6 +33,7 @@ import { useIsDesktop } from '@/hooks/useIsDesktop';
 import { useTranslationMap } from '@/hooks/useTranslationMap';
 import { getStockLabel, inferStockMarket } from '@/utils/stockDisplay';
 import { fmtPrice } from '@/lib/price';
+import { Skeleton } from '@/components/ui/Skeleton';
 import { Tile } from '@/components/redesign/Tile';
 import { SectorIcon } from '@/components/topics/SectorIcon';
 import { getSectorsByTicker } from '@/services/api/stocks';
@@ -61,6 +62,9 @@ const SUB_PANE_LABEL: Record<string, string> = {
 const StockHeaderCard: React.FC<{ symbol: string; insights: TickerInsight[]; episodes: ApiEpisode[] }> = ({ symbol, insights, episodes }) => {
   const [stockData, setStockData] = useState<CompanyDetail | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [quote, setQuote] = useState<CompanyDetail | null>(null);
+  const [isQuoteLoading, setIsQuoteLoading] = useState(true);
+  const chartRequestId = useRef(0);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const noOlderDataRef = useRef(false);
   const { watchlist, toggleWatchlist, theme } = useAppStore();
@@ -96,12 +100,30 @@ const StockHeaderCard: React.FC<{ symbol: string; insights: TickerInsight[]; epi
         ? { label: '韓股', cls: 'bg-muted text-muted-foreground' }
         : { label: '美股', cls: 'bg-accent-info-soft text-accent-info' };
 
+  useEffect(() => {
+    let cancelled = false;
+    setIsQuoteLoading(true);
+    const request = fetchWithFallback(
+      () => getStockByTicker(symbol.toUpperCase(), '1D'), null,
+      `GET /api/stocks/${symbol.toUpperCase()}?timeframe=1D`,
+    );
+    void request.then((data) => {
+      if (!cancelled) {
+        setQuote(data);
+        setIsQuoteLoading(false);
+      }
+    });
+    return () => { cancelled = true; };
+  }, [symbol]);
+
   const fetchStockData = useCallback(async (ticker: string, tf: TimeframeOption) => {
+    const requestId = ++chartRequestId.current;
     setIsLoading(true);
     try {
       // Real-or-empty: never fall back to fabricated company data (BUG-7). On
       // failure stockData is null and key stats render as '—'.
       const data = await fetchWithFallback(() => getStockByTicker(ticker.toUpperCase(), tf), null, `GET /api/stocks/${ticker.toUpperCase()}?timeframe=${tf}`);
+      if (requestId !== chartRequestId.current) return;
       // The API resolves a TW code said without its padding (981A → 00981A) to the real
       // listing. Move the URL with it, so the page, the watchlist and any share land on
       // the canonical code rather than the spoken one.
@@ -109,34 +131,29 @@ const StockHeaderCard: React.FC<{ symbol: string; insights: TickerInsight[]; epi
         navigate(`/stock/${data.ticker.toUpperCase()}`, { replace: true });
         return;
       }
-      // The header quote is the DAILY one. The API recomputes change/changePercent per
-      // timeframe (weekly bars give "change since last week"), so switching the chart to
-      // 週/月 used to flip the big number's sign and colour. Only the chart series changes
-      // with the timeframe; the quote fields keep whatever 1D (and the live feed) set.
-      setStockData((prev) =>
-        tf !== '1D' && prev && data
-          ? { ...data, price: prev.price, change: prev.change, changePercent: prev.changePercent }
-          : data,
-      );
+      setStockData(data);
     } catch (e) {
       console.error('[StockHeaderCard] Failed to fetch stock data:', e);
-      setStockData(null);
+      if (requestId === chartRequestId.current) setStockData(null);
     } finally {
-      setIsLoading(false);
+      if (requestId === chartRequestId.current) setIsLoading(false);
     }
   }, [navigate]);
 
   useEffect(() => {
     noOlderDataRef.current = false;
     if (symbol) fetchStockData(symbol, timeframe);
+    return () => { chartRequestId.current += 1; };
   }, [symbol, timeframe, fetchStockData]);
 
   const handleLoadMore = useCallback(
     async (beforeTimestamp: number) => {
       if (isLoadingMore || noOlderDataRef.current) return;
+      const requestId = chartRequestId.current;
       setIsLoadingMore(true);
       try {
         const moreData = await getStockByTicker(symbol.toUpperCase(), timeframe, { before: beforeTimestamp });
+        if (requestId !== chartRequestId.current) return;
         if (moreData?.chartData && moreData.chartData.length > 0) {
           setStockData((prev) => {
             if (!prev) return moreData;
@@ -164,6 +181,7 @@ const StockHeaderCard: React.FC<{ symbol: string; insights: TickerInsight[]; epi
         // 404 here means the feed has no bars older than this — the end of history,
         // not a failure. Remember it so the chart stops asking on every scroll.
         const status = (e as { response?: { status?: number } })?.response?.status;
+        if (requestId !== chartRequestId.current) return;
         if (status === 404) noOlderDataRef.current = true;
         else console.error('[StockHeaderCard] Failed to load more data:', e);
       } finally {
@@ -177,7 +195,7 @@ const StockHeaderCard: React.FC<{ symbol: string; insights: TickerInsight[]; epi
     if (!symbol) return;
     const offConn = priceWebSocketClient.onConnectionChange(() => {});
     const offPrice = priceWebSocketClient.onPriceUpdate((u: RealTimePriceUpdate) => {
-      if (u.ticker === symbol) setStockData((prev) => (prev ? { ...prev, price: u.price, change: u.change, changePercent: u.changePercent } : prev));
+      if (u.ticker === symbol) setQuote((prev) => (prev ? { ...prev, price: u.price, change: u.change, changePercent: u.changePercent } : prev));
     });
     priceWebSocketClient.connect();
     priceWebSocketClient.subscribe([symbol]);
@@ -188,9 +206,9 @@ const StockHeaderCard: React.FC<{ symbol: string; insights: TickerInsight[]; epi
     };
   }, [symbol]);
 
-  const displayPrice = stockData?.price ?? null;
-  const displayChange = stockData?.change ?? 0;
-  const displayChangePercent = stockData?.changePercent ?? 0;
+  const displayPrice = quote?.price ?? null;
+  const displayChange = quote?.change ?? 0;
+  const displayChangePercent = quote?.changePercent ?? 0;
   const trend = useStockTrendColor(displayChange);
 
   // One dot per day a podcast discussed this ticker, coloured by that day's dominant
@@ -344,11 +362,20 @@ const StockHeaderCard: React.FC<{ symbol: string; insights: TickerInsight[]; epi
           </button>
         </div>
         <div className="flex items-baseline gap-3 flex-wrap mt-1.5">
-          <span className={cn('font-mono tabular-nums text-2xl font-semibold tracking-[-0.02em]', hasDisplayPrice ? trend.text : 'text-muted-foreground')}>
-            {isLoading ? '…' : hasDisplayPrice ? fmtPrice(displayPrice, symbol) : '—'}
-          </span>
-          {hasDisplayPrice && <Change value={displayChangePercent} />}
-          <span className="text-xs text-muted-foreground">{hasDisplayPrice ? '延遲 15 分鐘' : '行情資料暫無'}</span>
+          {isQuoteLoading ? (
+            <div role="status" aria-label="行情載入中" className="flex items-center gap-3 py-1">
+              <Skeleton className="h-7 w-32 motion-reduce:animate-none" />
+              <Skeleton className="h-4 w-16 motion-reduce:animate-none" />
+            </div>
+          ) : (
+            <>
+              <span className={cn('font-mono tabular-nums text-2xl font-semibold tracking-[-0.02em]', hasDisplayPrice ? trend.text : 'text-muted-foreground')}>
+                {hasDisplayPrice ? fmtPrice(displayPrice, symbol) : '—'}
+              </span>
+              {hasDisplayPrice && <Change value={displayChangePercent} />}
+              <span className="text-xs text-muted-foreground">{hasDisplayPrice ? '延遲 15 分鐘' : '行情資料暫無'}</span>
+            </>
+          )}
         </div>
       </div>
 
@@ -376,7 +403,14 @@ const StockHeaderCard: React.FC<{ symbol: string; insights: TickerInsight[]; epi
             ticker={symbol}
           />
           {isLoading ? (
-            <div style={{ height: chartHeight }} className="w-full mt-1 rounded-md bg-muted/30 animate-pulse" />
+            <div role="status" aria-label="股價走勢載入中" style={{ height: chartHeight }} className="relative w-full mt-1 overflow-hidden rounded-md bg-muted/20">
+              <div aria-hidden="true" className="absolute inset-0 bg-gradient-to-r from-transparent via-muted/60 to-transparent motion-safe:animate-pulse" />
+              <svg aria-hidden="true" viewBox="0 0 600 240" preserveAspectRatio="none" className="absolute inset-6 h-[calc(100%-3rem)] w-[calc(100%-3rem)] text-muted-foreground/20 motion-safe:animate-pulse">
+                <path d="M0 60H600 M0 120H600 M0 180H600" fill="none" stroke="currentColor" strokeDasharray="4 6" />
+                <path d="M0 180L50 165L100 175L150 130L200 145L250 95L300 115L350 75L400 90L450 55L500 70L550 35L600 45" fill="none" stroke="currentColor" strokeWidth="3" strokeLinejoin="round" />
+              </svg>
+              <span className="absolute inset-x-0 bottom-5 text-center text-xs text-muted-foreground">股價走勢載入中</span>
+            </div>
           ) : chartData.length > 0 ? (
             <div style={{ height: chartHeight }} className="w-full mt-1">
               <TradingViewChart
@@ -612,7 +646,7 @@ export const StockDashboard: React.FC = () => {
         url={typeof window !== 'undefined' ? window.location.href : undefined}
       />
       <PageContent>
-        <StockHeaderCard symbol={symbol} insights={insights} episodes={episodes} />
+        <StockHeaderCard key={symbol} symbol={symbol} insights={insights} episodes={episodes} />
 
         {insights.length > 0 && (
           <section className="mb-[18px]">
