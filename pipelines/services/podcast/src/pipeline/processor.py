@@ -6,6 +6,8 @@ This module contains the EpisodeProcessor class that orchestrates all processing
 
 from typing import Dict
 
+from shared.platform_client import sync_episode_mentions
+
 from src.models.podcast_models import PodcastEpisode
 
 from .config import PipelineConfig
@@ -166,14 +168,17 @@ class EpisodeProcessor:
             # Step 5: Persist the episode doc into Postgres (the only content store)
             persist_episode(self.config, self.services, episode_data)
 
+            # Step 5d: Export ticker insights per platform contract
+            export_ticker_insights(self.config, self.services, episode_data)
+
+            if self.config.rerun_from in (None, "download", "transcribe", "summarize", "upload"):
+                sync_episode_mentions(episode_data.episode_id)
+
             # Optional theme views use the transcript and write only through the API.
             extract_theme_views(self.config, self.services, episode_data)
 
             # Step 5b: Ingest into knowledge wiki (best-effort)
             ingest_into_wiki(self.config, self.services, episode_data)
-
-            # Step 5d: Export ticker insights per platform contract
-            export_ticker_insights(self.config, self.services, episode_data)
 
             # Step 5f: Stage the summary on 方格子 + Substack (best-effort, off by default)
             trigger_syndicate(self.config, self.services, episode_data)

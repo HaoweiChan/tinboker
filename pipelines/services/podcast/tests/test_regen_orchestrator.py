@@ -12,6 +12,7 @@ import json
 import sys
 from datetime import datetime, timezone
 from types import ModuleType
+from unittest.mock import MagicMock
 
 import psycopg
 import pytest
@@ -32,6 +33,9 @@ from src.podcast.regen import orchestrator as orch
 def _isolate_work_dir(tmp_path, monkeypatch, request):
     """Persist drafts under a tmp dir and start every test with a clean session map."""
     monkeypatch.setenv("TINBOKER_REGEN_WORK_DIR", str(tmp_path))
+    response = MagicMock()
+    response.__enter__.return_value.status = 200
+    monkeypatch.setattr("shared.platform_client.urllib.request.urlopen", lambda *a, **k: response)
     orch._SESSIONS.clear()
     if request.node.name != "test_media_service_uses_regen_bootstrap_before_import":
         monkeypatch.setattr(orch, "_gcs_storage_service", lambda: _FakeGCS())
@@ -691,6 +695,46 @@ def test_commit_patch_carries_content_writer_token(monkeypatch):
     assert captured["url"].endswith("/api/podcast/股癌/episodes/ep_test")
     assert report.get("platform_notified") == 200
     assert not report["warnings"]
+
+
+@pytest.mark.parametrize("sync_fails", [False, True])
+def test_commit_syncs_mentions_after_persistence_best_effort(monkeypatch, sync_fails):
+    draft = _new_draft()
+    draft["completed"] = ["ticker_extractor"]
+    draft["state"]["ticker_insights"] = {"ticker_insights": []}
+    cur = _fake_pg(monkeypatch)
+    persisted = []
+    monkeypatch.setattr(
+        "src.podcast.exporters.ticker_insights.replace_episode_insights_postgres",
+        lambda eid, docs: persisted.append(eid) or 0,
+    )
+    monkeypatch.setenv("TINBOKER_ADMIN_API_URL", "https://admin.example.test")
+    monkeypatch.setenv("TINBOKER_WRITE_TOKEN", "test-token")
+    monkeypatch.delenv("TINBOKER_PLATFORM_API_URL", raising=False)
+    requests = []
+
+    def sync_http(request, timeout):
+        assert _merged_doc(cur)
+        assert persisted == ["ep_test"]
+        assert timeout > 0
+        requests.append(request)
+        if sync_fails:
+            raise TimeoutError("platform unavailable")
+        response = MagicMock()
+        response.__enter__.return_value.status = 200
+        return response
+
+    monkeypatch.setattr("shared.platform_client.urllib.request.urlopen", sync_http)
+    report = orch.commit("ep_test")
+    assert report["committed"] is True
+    assert len(requests) == 1
+    assert requests[0].full_url == "https://admin.example.test/api/admin/episodes/ep_test/sync-mentions"
+    assert requests[0].method == "POST"
+    assert requests[0].get_header("Authorization") == "Bearer test-token"
+
+    requests.clear()
+    orch.commit("ep_test", notify_platform=False)
+    assert requests == []
 
 
 def test_commit_without_write_token_skips_patch_and_warns(monkeypatch):
