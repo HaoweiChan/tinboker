@@ -13,6 +13,7 @@ config. Read-only, short-timeout, stdlib-only — no new dependency on ``shared`
 from __future__ import annotations
 
 import json
+import logging
 import os
 import urllib.error
 import urllib.parse
@@ -276,3 +277,36 @@ def news_drafts_request(body: dict[str, Any] | None = None) -> dict[str, Any] | 
     except (urllib.error.URLError, TimeoutError, ValueError, OSError) as exc:
         print(f"Warning: news draft handoff unavailable ({type(exc).__name__})")
         return None
+
+
+def sync_episode_mentions(episode_id: str, *, timeout: float = 45.0) -> bool:
+    """Refresh mentions after episode and ticker writes; never fail ingestion.
+
+    Goes to admin_base_url() (staging in production): the endpoint is an admin route,
+    and every environment shares one database, so any env writes the same rows.
+    """
+    base = admin_base_url()
+    token = os.environ.get("TINBOKER_WRITE_TOKEN")
+    if not base or not token or not episode_id:
+        logging.getLogger(__name__).warning(
+            "Mention sync skipped for %s: admin URL, write token, or episode ID missing",
+            episode_id,
+        )
+        return False
+    try:
+        path = urllib.parse.quote(episode_id, safe="")
+        request = urllib.request.Request(
+            f"{base}/api/admin/episodes/{path}/sync-mentions",
+            data=b"", method="POST",
+            headers=_headers({"Authorization": f"Bearer {token}"}),
+        )
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            if not 200 <= response.status < 300:
+                raise ValueError(f"HTTP {response.status}")
+        return True
+    except Exception as exc:
+        logging.getLogger(__name__).warning(
+            "Mention sync failed for %s (%s); periodic reconciliation will retry",
+            episode_id, type(exc).__name__,
+        )
+        return False

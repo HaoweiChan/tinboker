@@ -5,7 +5,7 @@ Derives content_mentions rows from the two mention sources the pipelines
 already produce — the mirrored ticker_insights docs (per-episode LLM ticker
 extraction) and episode sector_exposures (deterministic alias matching) — then
 computes 1D/5D/20D/60D trading-day returns from the warm stock_daily_closes
-table. Daily-batch only by design (TKB-001: no real-time tracking).
+table. Mentions sync on ingest; performance snapshots remain periodic.
 """
 import asyncio
 import json
@@ -125,12 +125,20 @@ def _existing_keys(db: Session) -> set:
 
 def _delete_stale_mentions(
     db: Session, mention_type: str, current_keys: set[str], cutoff: datetime,
+    episode_id: str | None = None,
 ) -> int:
     """Reconcile only the source window read by this pass; snapshots cascade.
 
     An empty source window is a failed or misconfigured read (the mirror always holds
     months of episodes), never "every mention went away" — so it deletes nothing.
     """
+    if episode_id is not None:
+        return db.query(ContentMention).filter(
+            ContentMention.source_type == "podcast",
+            ContentMention.episode_id == episode_id,
+            ContentMention.mention_type == mention_type,
+            ContentMention.mention_key.notin_(current_keys),
+        ).delete(synchronize_session=False)
     if not current_keys:
         logger.warning("mention sync: empty %s source window, skipping stale-row cleanup", mention_type)
         return 0
@@ -142,30 +150,48 @@ def _delete_stale_mentions(
     ).delete(synchronize_session=False)
 
 
+def _lock_mention_sync(db: Session) -> None:
+    # Full-window cleanup and ingest must read/write in order across environments.
+    if db.get_bind().dialect.name == "postgresql":
+        db.execute(text("SELECT pg_advisory_xact_lock(hashtext(:key))"),
+                   {"key": "content-mentions-sync"})
+
+
 def sync_ticker_mentions(db: Session, days: int = SYNC_LOOKBACK_DAYS) -> int:
     """Reconcile ticker mentions with current sources. Returns rows inserted.
 
     Existing rows follow their source: mention_start_s (heals the rows written while
     ms were stored as seconds), and the stance/thesis, which change when an episode is
     regenerated. After the first pass that is a no-op."""
-    rows = _fetch_recent_insight_rows(days)
+    _lock_mention_sync(db)
+    return _sync_ticker_rows(db, _fetch_recent_insight_rows(days), days)
+
+
+def _sync_ticker_rows(
+    db: Session, rows: List[dict], days: int, episode_id: str | None = None,
+) -> int:
+    stored_query = db.query(
+        ContentMention.mention_key, ContentMention.mention_start_s,
+        ContentMention.sentiment_label, ContentMention.thesis,
+    )
+    if episode_id is not None:
+        stored_query = stored_query.filter(ContentMention.episode_id == episode_id)
     stored = {
         key: (start_s, label, thesis)
-        for key, start_s, label, thesis in db.query(
-            ContentMention.mention_key, ContentMention.mention_start_s,
-            ContentMention.sentiment_label, ContentMention.thesis,
-        )
+        for key, start_s, label, thesis in stored_query
     }
     seen = set(stored)
     current_keys: set[str] = set()
     inserted = healed = 0
     for row in rows:
         ticker = _canonical_ticker(row.get("ticker") or "")
-        episode_id = (row.get("episode_id") or "").strip()
-        mentioned_at = _parse_iso(row.get("podcast_launch_time"))
-        if not ticker or not episode_id or mentioned_at is None:
+        row_episode_id = (row.get("episode_id") or "").strip()
+        if episode_id is not None and row_episode_id != episode_id:
             continue
-        key = f"{episode_id}:ticker:{ticker}"
+        mentioned_at = _parse_iso(row.get("podcast_launch_time"))
+        if not ticker or not row_episode_id or mentioned_at is None:
+            continue
+        key = f"{row_episode_id}:ticker:{ticker}"
         current_keys.add(key)
         start_s = _parse_start_s(row.get("reasons"))
         if key in seen:
@@ -184,7 +210,7 @@ def sync_ticker_mentions(db: Session, days: int = SYNC_LOOKBACK_DAYS) -> int:
         seen.add(key)
         db.add(ContentMention(
             mention_key=key,
-            episode_id=episode_id,
+            episode_id=row_episode_id,
             source_type="podcast",
             podcaster=row.get("podcaster"),
             mention_type="ticker",
@@ -202,8 +228,8 @@ def sync_ticker_mentions(db: Session, days: int = SYNC_LOOKBACK_DAYS) -> int:
     cutoff = (datetime.utcnow() - timedelta(days=days)).replace(
         hour=0, minute=0, second=0, microsecond=0,
     )
-    deleted = _delete_stale_mentions(db, "ticker", current_keys, cutoff)
-    if inserted or healed or deleted:
+    _delete_stale_mentions(db, "ticker", current_keys, cutoff, episode_id)
+    if episode_id is None:
         db.commit()
     return inserted
 
@@ -218,13 +244,20 @@ def _scan_episodes() -> tuple:
     path the sector board already uses, widened by one field locally so the board's own
     scans stay lean. Cached for the cycle (``run_sync_cycle`` clears it): the scan is
     ~6,800 documents and both passes want it."""
-    from src.services.macro_data import SERIES
     from src.services.podcast import PodcastService
 
     service = PodcastService()
     docs = service.firestore_service.stream_documents_projected(
         "episodes", list(service._SECTOR_SCAN_FIELDS) + ["macro_claims"],
     )
+    return _episode_records(docs)
+
+
+def _episode_records(docs: List[dict]) -> tuple[List[dict], List[dict]]:
+    from src.services.macro_data import SERIES
+    from src.services.podcast import PodcastService
+
+    service = PodcastService()
     records: List[dict] = []
     macro: List[dict] = []
     for doc in docs:
@@ -277,27 +310,57 @@ def _scan_macro_claims() -> List[dict]:
 
 def sync_sector_mentions(db: Session, days: int = SYNC_LOOKBACK_DAYS) -> int:
     """Reconcile sector mentions with current sources. Returns rows inserted."""
+    _lock_mention_sync(db)
     try:
         records = _scan_sector_exposures()
     except Exception as e:
         logger.warning("mention sync: sector exposure scan failed: %s", e)
+        db.rollback()
         return 0
+    return _sync_sector_records(db, records, days)
+
+
+def _sync_sector_records(
+    db: Session, records: List[dict], days: int, episode_id: str | None = None,
+) -> int:
     cutoff = datetime.utcnow() - timedelta(days=days)
-    seen = _existing_keys(db)
+    query = db.query(ContentMention)
+    if episode_id is not None:
+        query = query.filter(ContentMention.episode_id == episode_id)
+    stored = {row.mention_key: row for row in query}
+    seen = set(stored)
     current_keys: set[str] = set()
     inserted = 0
     for rec in records:
-        if rec["mentioned_at"] < cutoff:
+        if episode_id is not None and rec["episode_id"] != episode_id:
+            continue
+        if episode_id is None and rec["mentioned_at"] < cutoff:
             continue
         # Episodes list the same exposure_id more than once (2,179 pairs on
         # 2026-09-05); with autoflush off a per-row lookup missed those and the
         # whole pass died on the unique key at commit.
         key = f"{rec['episode_id']}:sector:{rec['exposure_id']}"
+        if key in current_keys:
+            continue
         current_keys.add(key)
+        confidence = rec.get("confidence")
+        values = {
+            "display_name": rec.get("display_name"),
+            "confidence": float(confidence) if confidence is not None else 1.0,
+            "payload": {"members": rec.get("members") or [],
+                        "mention_text": rec.get("mention_text")},
+        }
         if key in seen:
+            existing = stored[key]
+            if _sector_members(existing) != values["payload"]["members"]:
+                db.query(SectorPerformanceSnapshot).filter(
+                    SectorPerformanceSnapshot.mention_id == existing.id,
+                ).delete(synchronize_session=False)
+            for field, value in values.items():
+                if getattr(existing, field) != value:
+                    setattr(existing, field, value)
             continue
         seen.add(key)
-        confidence = rec.get("confidence")
         db.add(ContentMention(
             mention_key=key,
             episode_id=rec["episode_id"],
@@ -305,17 +368,48 @@ def sync_sector_mentions(db: Session, days: int = SYNC_LOOKBACK_DAYS) -> int:
             podcaster=rec.get("podcaster"),
             mention_type="sector",
             exposure_id=rec["exposure_id"],
-            display_name=rec.get("display_name"),
             mentioned_at=rec["mentioned_at"],
-            confidence=float(confidence) if confidence is not None else 1.0,
             extraction_method="alias_match",
-            payload={"members": rec.get("members") or [], "mention_text": rec.get("mention_text")},
+            **values,
         ))
         inserted += 1
-    deleted = _delete_stale_mentions(db, "sector", current_keys, cutoff)
-    if inserted or deleted:
+    _delete_stale_mentions(db, "sector", current_keys, cutoff, episode_id)
+    if episode_id is None:
         db.commit()
     return inserted
+
+
+def sync_episode_mentions(episode_id: str) -> dict:
+    """Reconcile one persisted episode, without scanning or pruning other episodes.
+
+    Source read failures propagate before any deletion. An existing episode with an
+    empty extraction is authoritative, so regeneration can remove all its mentions.
+    """
+    from src.services.postgres_mirror_service import content_read_service
+
+    for db in get_session():
+        try:
+            _lock_mention_sync(db)
+            reader = content_read_service()
+            doc = reader.get_document("episodes", episode_id)
+            if doc is None:
+                raise ValueError(f"Episode {episode_id} not found")
+            rows = reader.query_collection_group(
+                "tickers", filters=[("episode_id", "==", episode_id)],
+            )
+            records, _ = _episode_records([{**doc, "id": episode_id}])
+            if doc.get("retracted_at"):
+                rows = []
+            stats = {
+                "ticker_mentions": _sync_ticker_rows(db, rows, SYNC_LOOKBACK_DAYS, episode_id),
+                "sector_mentions": _sync_sector_records(db, records, SYNC_LOOKBACK_DAYS, episode_id),
+            }
+            db.commit()
+            return stats
+        except Exception:
+            db.rollback()
+            raise
+    raise RuntimeError("Mention sync database session unavailable")
 
 
 # ---------------------------------------------------------------------------
@@ -605,8 +699,8 @@ def sync_macro_mentions(db: Session, days: int = SYNC_LOOKBACK_DAYS) -> int:
 def run_sync_cycle() -> dict:
     """One full sync + snapshot pass. Sync (blocking DB/IO) — call off-loop.
 
-    ponytail: dev/staging/prod all run this against the one shared table; the
-    loser of a same-key race rolls back and simply catches up next cycle."""
+    The production safety net shares a reconciliation lock with ingest callbacks;
+    price-history and performance work runs after that lock is released."""
     stats = {"ticker_mentions": 0, "sector_mentions": 0, "macro_mentions": 0, "us_history_bars": 0,
              "ticker_snapshots": 0, "sector_snapshots": 0}
     _scan_episodes.cache_clear()       # one episode scan per cycle, shared by sector + macro
