@@ -7,7 +7,9 @@ Mirrors the current tinboker-agents config at the time of writing:
   - services/news/feeds.json           (6 RSS feeds)
 
 This is an insert-only seed (see ContentSourceService.seed_from_config): it populates
-empty tables and never overwrites operator edits. Once Phase 2 flips the agents pipeline
+empty tables and never overwrites operator edits. A row deleted in admin IS re-inserted on the next
+boot with these values, so a show that should stay off is seeded ``active: False``
+rather than deleted (Motley Fool Money came back live that way on 2026-10-16). Once Phase 2 flips the agents pipeline
 to pull GET /api/sources, this module is just the initial bootstrap — the table becomes
 the source of truth.
 """
@@ -126,14 +128,14 @@ PODCAST_SOURCES: list[dict] = [
         "name": "Bloomberg Masters in Business Podcast",
         "feed_url": "https://podcasttomp3.com/podcasts/v2/4112705",
         "spotify_url": "https://open.spotify.com/show/5LGxKlY6fzXS3tGsjB23Cb",
-        "lookback_days": 30, "active": True,
+        "lookback_days": 30, "active": False,
     },
     {
         "source_type": "podcast", "language": "en",
         "name": "Exchanges at Goldman Sachs",
         "feed_url": "https://podcasttomp3.com/podcasts/v2/753888",
         "spotify_url": "https://open.spotify.com/episode/2qNxiLun8EvNNnowUp3iaN",
-        "lookback_days": 30, "active": True,
+        "lookback_days": 30, "active": False,
     },
     {
         "source_type": "podcast", "language": "en",
@@ -147,77 +149,77 @@ PODCAST_SOURCES: list[dict] = [
         "name": "The Disciplined Investor",
         "feed_url": "https://podcasttomp3.com/podcasts/v2/745155",
         "spotify_url": "https://open.spotify.com/show/5vtvEVDPUi4221imwhXyXt",
-        "lookback_days": 30, "active": True,
+        "lookback_days": 30, "active": False,
     },
     {
         "source_type": "podcast", "language": "en",
         "name": "Invest Like the Best",
         "feed_url": "https://podcasttomp3.com/podcasts/v2/982387",
         "spotify_url": "https://open.spotify.com/show/22fi0RqfoBACCuQDv97wFO",
-        "lookback_days": 30, "active": True,
+        "lookback_days": 30, "active": False,
     },
     {
         "source_type": "podcast", "language": "en",
         "name": "Inside the Strategy Room",
         "feed_url": "https://podcasttomp3.com/podcasts/v2/768284",
         "spotify_url": "https://open.spotify.com/show/4TcFfiQ0e6OYuc5kRDLxqj",
-        "lookback_days": 30, "active": True,
+        "lookback_days": 30, "active": False,
     },
     {
         "source_type": "podcast", "language": "en",
         "name": "The Tech M&A Podcast",
         "feed_url": "https://podcasttomp3.com/podcasts/v2/688826",
         "spotify_url": "https://open.spotify.com/show/4t1zDAifgsv0kvdBagRjBj",
-        "lookback_days": 30, "active": True,
+        "lookback_days": 30, "active": False,
     },
     {
         "source_type": "podcast", "language": "en",
         "name": "The Long View",
         "feed_url": "https://podcasttomp3.com/podcasts/v2/558036",
         "spotify_url": "https://open.spotify.com/show/21UMpSDjAl7HzyQ0M0wvLw",
-        "lookback_days": 30, "active": True,
+        "lookback_days": 30, "active": False,
     },
     {
         "source_type": "podcast", "language": "en",
         "name": "The Meb Faber Show",
         "feed_url": "https://podcasttomp3.com/podcasts/v2/743157",
         "spotify_url": "https://open.spotify.com/show/4RajWGfe80Wfy9J6rswE4L",
-        "lookback_days": 30, "active": True,
+        "lookback_days": 30, "active": False,
     },
     {
         "source_type": "podcast", "language": "en",
         "name": "Motley Fool Money",
         "feed_url": "https://podcasttomp3.com/podcasts/v2/51305",
         "spotify_url": "https://open.spotify.com/show/7tXRc97C1fA0epHAGQuJOE",
-        "lookback_days": 30, "active": True,
+        "lookback_days": 30, "active": False,
     },
     {
         "source_type": "podcast", "language": "en",
         "name": "Private Equity Funcast",
         "feed_url": "https://podcasttomp3.com/podcasts/v2/215225",
         "spotify_url": "https://open.spotify.com/show/0klTgf4aQagSa7pWacqjJ5",
-        "lookback_days": 30, "active": True,
+        "lookback_days": 30, "active": False,
     },
     {
         "source_type": "podcast", "language": "en",
         "name": "The Intrinsic Value Podcast",
         "feed_url": "https://podcasttomp3.com/podcasts/v2/786362",
         "spotify_url": "https://open.spotify.com/show/7dnn22EWyo6MLsPaR492BM",
-        "lookback_days": 30, "active": True,
+        "lookback_days": 30, "active": False,
     },
     {
         "source_type": "podcast", "language": "en",
         "name": "Capital Allocators",
         "feed_url": "https://podcasttomp3.com/podcasts/v2/222998",
         "spotify_url": "https://open.spotify.com/show/3q6PrjHVfRzpD2lN1g2XRU",
-        "lookback_days": 30, "active": True,
+        "lookback_days": 30, "active": False,
     },
     {
         "source_type": "podcast", "language": "en",
         "name": "Dealcast",
         "feed_url": "https://podcasttomp3.com/podcasts/v2/4585725",
         "spotify_url": "https://open.spotify.com/show/2zBShB8SrybR8GPHlH0lBD",
-        "lookback_days": 30, "active": True,
+        "lookback_days": 30, "active": False,
     },
 ]
 
