@@ -64,6 +64,12 @@ class DataCollectionService:
         Returns:
             Stock object with all data or None if not found
         """
+        # Weekly/monthly charts use the daily store before spending any provider budget.
+        if timeframe in ("1W", "1M"):
+            stock = self._stock_from_stored_bars(ticker, timeframe, before=before)
+            if stock:
+                return stock
+
         # Route based on ticker type
         if self._is_taiwan_stock(ticker):
             # Taiwan stock - use FinMind API (before supported for daily aggregates)
@@ -103,22 +109,29 @@ class DataCollectionService:
             logger.warning(f"No data available for {ticker} from any API source")
         return None
 
-    def _stock_from_stored_bars(self, ticker: str, timeframe: Optional[str]) -> Optional[Stock]:
-        days = {"YTD": (datetime.now() - datetime(datetime.now().year, 1, 1)).days, "ALL": 1825}.get(timeframe or "", 365)
-        to_date = datetime.now().strftime("%Y-%m-%d")
-        from_date = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+    def _stock_from_stored_bars(self, ticker: str, timeframe: Optional[str], before: Optional[int] = None) -> Optional[Stock]:
+        tz = timezone.utc if self._is_taiwan_stock(ticker) else _NEW_YORK
+        end = datetime.fromtimestamp(before / 1000, tz=tz) - timedelta(days=1) if before else datetime.now(tz)
+        days = {"1W": 1825, "1M": 3650, "YTD": (end - end.replace(month=1, day=1)).days,
+                "ALL": 1825}.get(timeframe or "", 365)
+        to_date = end.strftime("%Y-%m-%d")
+        from_date = (end - timedelta(days=days)).strftime("%Y-%m-%d")
         try:
             bars = daily_bars.read_bars(ticker, from_date, to_date)
-            name = daily_bars.display_name(ticker) or ticker
         except Exception as e:
             logger.warning(f"Stored-bar fallback failed for {ticker}: {e}")
             return None
         if not bars:
             return None
+        try:
+            name = daily_bars.display_name(ticker) or ticker
+        except Exception as e:
+            logger.warning(f"Stored display name unavailable for {ticker}: {e}")
+            name = ticker
         tw = self._is_taiwan_stock(ticker)
         history = StockPriceHistory()
-        for b in bars:
-            history.add_record(_bar_record(b, timezone.utc if tw else _NEW_YORK))
+        for b in daily_bars.aggregate(bars, timeframe):
+            history.add_record(_bar_record(b, tz))
         last, prev = bars[-1]["close"], (bars[-2]["close"] if len(bars) > 1 else None)
         change = (last - prev) if prev else None
         return Stock(
@@ -302,12 +315,19 @@ class DataCollectionService:
                     raise
                 logger.warning(f"FinMind tail fetch failed for {ticker}, serving stored bars: {e}")
                 fetched = []
-            for bar in daily_bars.merge(stored, fetched):
+            for bar in daily_bars.aggregate(daily_bars.merge(stored, fetched), timeframe):
                 price_history.add_record(_bar_record(bar, timezone.utc))
             return
 
         limit = min(days + 50, 50000)
         bars = self.finmind_service.get_daily_aggregates(ticker, from_date=from_date, to_date=to_date, limit=limit)
+        if timeframe in ("1W", "1M"):
+            daily = [{"date": datetime.fromtimestamp(b["timestamp"] / 1000, tz=timezone.utc).strftime("%Y-%m-%d"),
+                      "open": b.get("open"), "high": b.get("high"), "low": b.get("low"),
+                      "close": b.get("close"), "volume": b.get("volume", 0)} for b in bars]
+            for bar in daily_bars.aggregate(daily, timeframe):
+                price_history.add_record(_bar_record(bar, timezone.utc))
+            return
         
         for bar in bars:
             # Convert timestamp to date string

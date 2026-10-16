@@ -241,3 +241,90 @@ async def test_repair_endpoint_starts_one_job_only(monkeypatch):
     assert first["started"] is True and second["started"] is False and starts == [400]
     gate.set()
     await admin_stock_bars._task
+
+
+@pytest.mark.parametrize("timeframe, dates", [
+    ("1W", ["2025-12-29", "2026-01-05"]),
+    ("1M", ["2025-12-01", "2026-01-01"]),
+])
+def test_aggregate_calendar_periods_preserves_ohlcv(timeframe, dates):
+    bars = [
+        {"date": "2025-12-31", "open": 10, "high": 15, "low": 9, "close": 12, "volume": 100},
+        {"date": "2026-01-02", "open": 12, "high": 18, "low": 11, "close": 16, "volume": 200},
+        {"date": "2026-01-05", "open": 16, "high": 17, "low": 8, "close": 9, "volume": 300},
+    ]
+    result = daily_bars.aggregate(list(reversed(bars)), timeframe)
+    assert [b["date"] for b in result] == dates
+    if timeframe == "1W":
+        assert result[0] == dict(date=dates[0], open=10, high=18, low=9, close=16, volume=300)
+        assert result[1] == {**bars[2], "date": dates[1]}
+    else:
+        assert result[0] == {**bars[0], "date": dates[0]}
+        assert result[1] == dict(date=dates[1], open=12, high=18, low=8, close=9, volume=500)
+    assert bars[0]["date"] == "2025-12-31"
+
+
+@pytest.mark.parametrize("ticker", ["MU", "2330"])
+@pytest.mark.parametrize("timeframe", ["1W", "1M"])
+@pytest.mark.asyncio
+async def test_period_chart_uses_partial_daily_store_without_provider_calls(monkeypatch, ticker, timeframe):
+    from unittest.mock import AsyncMock, patch
+    from src.services.stock import StockService
+
+    svc, massive, finmind = _service()
+    # Only a few sessions exist, nowhere near the requested five/ten-year window.
+    bars = _bars("2026-01-05", 3)
+    monkeypatch.setattr(daily_bars, "read_bars", lambda *a: bars)
+    monkeypatch.setattr(daily_bars, "display_name", lambda t: t)
+    with patch("src.services.stock.cache_get", new_callable=AsyncMock, return_value=None), \
+         patch("src.services.stock.cache_set", new_callable=AsyncMock):
+        detail = await StockService(svc).get_stock_info_async(ticker, timeframe=timeframe)
+    assert detail is not None and len(detail.chartData) == 1
+    assert detail.chartData[0].price == 102
+    assert detail.price == 102
+    assert detail.changePercent == pytest.approx(100 / 101)
+    assert massive.mock_calls == []
+    assert finmind.mock_calls == []
+
+
+def test_stored_period_pagination_uses_exclusive_market_date(monkeypatch):
+    svc, massive, _ = _service()
+    read = Mock(return_value=_bars("2026-01-02", 1))
+    monkeypatch.setattr(daily_bars, "read_bars", read)
+    monkeypatch.setattr(daily_bars, "display_name", lambda t: t)
+    before = int(datetime(2026, 1, 5, tzinfo=daily_bars_ny()).timestamp() * 1000)
+    stock = svc.collect_stock_data("MU", timeframe="1W", before=before)
+    assert stock is not None
+    assert read.call_args.args[2] == "2026-01-04"
+    assert stock.stock_price_history.day[0].date == "2025-12-29"
+    assert massive.mock_calls == []
+
+
+@pytest.mark.parametrize("timeframe", ["1W", "1M"])
+@pytest.mark.parametrize("before", [None, 1768003200000])
+def test_tw_cold_store_aggregates_provider_daily_bars(monkeypatch, timeframe, before):
+    svc, _, finmind = _service()
+    monkeypatch.setattr(daily_bars, "read_bars", lambda *a: [])
+    bars = _bars("2026-01-05", 3)
+    finmind.get_daily_aggregates.return_value = [
+        {**bar, "timestamp": int(datetime.strptime(bar["date"], "%Y-%m-%d")
+                                .replace(tzinfo=timezone.utc).timestamp() * 1000)}
+        for bar in bars
+    ]
+    history = SimpleNamespace(day=[], add_record=lambda r: history.day.append(r))
+    svc._fetch_finmind_daily_aggregates("2330", history, timeframe=timeframe, before=before)
+    assert len(history.day) == 1
+    assert history.day[0].open == 100
+    assert history.day[0].close == 102
+    assert history.day[0].Trading_Volume == 3000
+    assert history.day[0].date == ("2026-01-05" if timeframe == "1W" else "2026-01-01")
+
+
+def test_stored_period_chart_survives_display_name_failure(monkeypatch):
+    svc, massive, finmind = _service()
+    monkeypatch.setattr(daily_bars, "read_bars", lambda *a: _bars("2026-01-05", 3))
+    monkeypatch.setattr(daily_bars, "display_name", Mock(side_effect=RuntimeError("metadata unavailable")))
+    stock = svc.collect_stock_data("MU", timeframe="1W")
+    assert stock is not None and stock.metadata.stock_name == "MU"
+    assert len(stock.stock_price_history.day) == 1 and stock.price == 102
+    assert massive.mock_calls == finmind.mock_calls == []

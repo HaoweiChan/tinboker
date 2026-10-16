@@ -69,7 +69,8 @@ class StockService:
         # For 1H, we fetch minute data, so differentiate in cache key
         timeframe_key = timeframe or 'ALL'
         granularity = 'minute' if timeframe in ['1H'] else 'daily'
-        cache_key = f"stock:{ticker.upper()}:info:{timeframe_key}:{granularity}:v3"
+        version = "v4" if timeframe in ("1W", "1M") else "v3"
+        cache_key = f"stock:{ticker.upper()}:info:{timeframe_key}:{granularity}:{version}"
         # A daily view with a price but no bars means the history fetch failed while the
         # snapshot succeeded. That shape was cached for an hour and its 7-day stale copy
         # overwrote the good one: NVDA's 1Y chart and share card 404'd on prod
@@ -105,7 +106,8 @@ class StockService:
         
         if stock_data:
             # Convert to CompanyDetail format (a pagination page never needs the logo lookup)
-            result = self._convert_stock_to_company_detail(stock_data, include_images=not before)
+            result = self._convert_stock_to_company_detail(
+                stock_data, include_images=not before and not getattr(stock_data, "from_stored_bars", False))
 
             # Apply timeframe filtering if provided (for non-standard timeframes that need date filtering)
             # 1H is handled by minute fetch
