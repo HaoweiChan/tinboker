@@ -10,24 +10,24 @@ import { formatMemberUntil } from '@/lib/date';
 import { INSIGHT_PAYWALL_DAYS } from '@/lib/insightPaywall';
 
 // What membership adds, each with a screenshot of the real member view (public/membership,
-// captured at phone width, 2x). Keep this list in step with the gates it describes:
+// captured from a 400px-wide layout at 2x, so it reads at near 1:1 on a phone). Keep this list in step with the gates it describes:
 // 走勢 (PicksPage / batch-prices-windows, theme cards), 最新個股觀點 (INSIGHT_PAYWALL_DAYS),
 // and 其他節目怎麼看 (/episodes/{id}/cross-show/detail; free users get a two-row preview).
 const BENEFITS = [
   {
     title: '走勢',
     body: '每一位財經 Podcaster 點名的個股與題材，從提及當日起算的 7／30／90 天實際走勢，可依節目篩選、依報酬排序。',
-    image: { src: '/membership/picks.webp', width: 1150, height: 714 },
+    image: { src: '/membership/picks.webp', width: 740, height: 592 },
   },
   {
     title: '最新個股觀點',
     body: `個股頁上最近 ${INSIGHT_PAYWALL_DAYS} 天的 Podcast 觀點摘要：誰在談、看多還是看空、理由是什麼。${INSIGHT_PAYWALL_DAYS} 天前的觀點對所有人免費。`,
-    image: { src: '/membership/insights.webp', width: 1150, height: 774 },
+    image: { src: '/membership/insights.webp', width: 750, height: 752 },
   },
   {
     title: '其他節目怎麼看',
     body: '每一集談到的個股與題材，對照發布前 30 天其他節目的說法：幾個節目也在談、整體偏多還是偏空、有沒有看法相反。免費會員可先看兩檔。',
-    image: { src: '/membership/crossshow.webp', width: 1140, height: 748 },
+    image: { src: '/membership/crossshow.webp', width: 690, height: 744 },
   },
 ] as const;
 
@@ -107,26 +107,30 @@ export const PlanCard: React.FC = () => {
     <div className="bg-card border border-border rounded-md p-5 sm:p-6 space-y-5">
       <div className="space-y-6">
         {BENEFITS.map((b) => (
-          <div key={b.title} className="flex items-start gap-3">
-            <CheckCircle2 size={20} className="text-accent-info shrink-0 mt-0.5" />
-            <div className="min-w-0 flex-1">
-              <h2 className="text-base font-semibold text-foreground mb-1">
-                {b.title === '走勢' && user?.is_member ? <Link to="/member" className="hover:underline">走勢</Link> : b.title}
-              </h2>
-              <p className="text-sm text-muted-foreground leading-[1.65]">{b.body}</p>
-              <figure className="mt-3">
-                <img
-                  src={b.image.src}
-                  width={b.image.width}
-                  height={b.image.height}
-                  loading="lazy"
-                  decoding="async"
-                  alt={`${b.title}示意圖`}
-                  className="w-full h-auto rounded-md border border-border"
-                />
-                <figcaption className="mt-1 text-2xs text-muted-foreground/70">示意圖，取自實際會員畫面</figcaption>
-              </figure>
+          <div key={b.title}>
+            <div className="flex items-start gap-3">
+              <CheckCircle2 size={20} className="text-accent-info shrink-0 mt-0.5" />
+              <div className="min-w-0 flex-1">
+                <h2 className="text-base font-semibold text-foreground mb-1">
+                  {b.title === '走勢' && user?.is_member ? <Link to="/member" className="hover:underline">走勢</Link> : b.title}
+                </h2>
+                <p className="text-sm text-muted-foreground leading-[1.65]">{b.body}</p>
+              </div>
             </div>
+            {/* Full card width on a phone (indented under the icon it was too small to
+                read); capped near the capture's own width on larger screens. */}
+            <figure className="mt-3 mx-auto w-full max-w-[380px]">
+              <img
+                src={b.image.src}
+                width={b.image.width}
+                height={b.image.height}
+                loading="lazy"
+                decoding="async"
+                alt={`${b.title}示意圖`}
+                className="w-full h-auto rounded-md border border-border"
+              />
+              <figcaption className="mt-1 text-2xs text-muted-foreground/70">示意圖，取自實際會員畫面</figcaption>
+            </figure>
           </div>
         ))}
       </div>
