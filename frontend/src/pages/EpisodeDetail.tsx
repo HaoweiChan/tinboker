@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useParams, useSearchParams, Link, useNavigate } from 'react-router-dom';
 import { ChevronLeft, Play, ExternalLink, Bookmark, Share2, Check } from 'lucide-react';
 import { SEO } from '@/components/common/SEO';
+import { useCrossShowPanelData } from '@/hooks/useCrossShowPanelData';
 import { CrossShowPanel } from '@/components/episode/CrossShowPanel';
 import { getEpisodeCrossShow } from '@/services/api/mentions';
 import type { CrossShowResponse } from '@/validation/schemas';
@@ -85,6 +86,7 @@ export const EpisodeDetail: React.FC = () => {
       .catch(() => { if (alive) setCrossShow(null); });
     return () => { alive = false; };
   }, [id]);
+  const panelData = useCrossShowPanelData(loading ? null : episode, crossShow);
   const [sectorPerfLoading, setSectorPerfLoading] = useState(false);
   useEffect(() => {
     if (!id) return;
@@ -282,7 +284,11 @@ export const EpisodeDetail: React.FC = () => {
         url={canonicalUrl}
         structuredData={structuredData}
       />
-      <PageContent>
+      <PageContent rail={!loading && episode && crossShow?.episode_id === episode.id && crossShow.subjects.length > 0 ? (
+        <div className="max-h-[calc(100dvh-96px)] overflow-y-auto overscroll-contain">
+          <CrossShowPanel key={episode.id} episode={episode} data={crossShow} panelData={panelData} sectorPerf={sectorPerf} sectorPerfLoading={sectorPerfLoading} />
+        </div>
+      ) : undefined}>
         <Link to="/" className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground mb-3"><ChevronLeft size={14} /> 回首頁</Link>
 
         {loading ? (
@@ -411,7 +417,9 @@ export const EpisodeDetail: React.FC = () => {
               </section>
             )}
 
-            <CrossShowPanel key={episode.id} episode={episode} data={crossShow} sectorPerf={sectorPerf} sectorPerfLoading={sectorPerfLoading} />
+            <div className="xl:hidden">
+              <CrossShowPanel key={episode.id} episode={episode} data={crossShow} panelData={panelData} sectorPerf={sectorPerf} sectorPerfLoading={sectorPerfLoading} />
+            </div>
 
             {/* 摘要 — structured summary (headings, paragraphs, ticker/tag/time markers)
                 minus the headline + thesis the 關鍵洞察 card above already shows. */}
