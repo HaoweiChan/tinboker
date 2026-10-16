@@ -12,12 +12,12 @@ export const MembershipPage: React.FC = () => {
 
   return (
     <>
-      <SEO title="會員方案" description="TinBoker 會員方案：走勢功能（個股 7／30／90 天實際走勢）與最近 7 天的個股觀點摘要，其餘功能維持免費開放。" />
+      <SEO title="會員方案" description="TinBoker 會員方案：走勢（個股與題材 7／30／90 天實際走勢）、最近 7 天的個股觀點摘要，以及每集個股與題材的其他節目看法對照，其餘功能維持免費開放。" />
       <PageContent className="max-w-2xl">
         <div className="pt-4 mb-6">
           <h1 className="heading-accent text-2xl font-semibold tracking-[-0.02em]">會員方案</h1>
           <p className="text-base text-muted-foreground mt-2 max-w-lg leading-[1.65]">
-            解鎖走勢與最新個股觀點，其餘功能維持免費，不受影響。
+            解鎖走勢、最新個股觀點與其他節目的看法對照，其餘功能維持免費，不受影響。
           </p>
           {!user && (
             <p className="text-sm text-accent-info mt-2">
