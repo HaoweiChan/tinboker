@@ -9,7 +9,7 @@ import { useAppStore } from '@/store/useAppStore';
 import { ChangePct } from '@/components/topics/ChangePct';
 import type { useCrossShowPanelData } from '@/hooks/useCrossShowPanelData';
 import type { CrossShowResponse } from '@/validation/schemas';
-import { crossShowLead, isOpposite, othersCounts, othersLean, stanceZh } from '../../../shared/crossShow.js';
+import { isOpposite, othersCounts, othersLean, stanceZh } from '../../../shared/crossShow.js';
 
 type Subject = CrossShowResponse['subjects'][number];
 // Rows of each kind a non-member sees unblurred when the public route previews none.
@@ -99,7 +99,6 @@ export const CrossShowPanel: React.FC<Props> = ({ episode, data, sectorPerf, sec
     const row = comparisons.get(subjectKey(t));
     return row && row.others.shows > 0 ? [[t.exposure_id!, `${row.others.shows} 個節目也談到`] as const] : [];
   }));
-  const lead = <p className="text-sm text-muted-foreground leading-[1.65] mb-3">{crossShowLead(data)}</p>;
 
   const clearStocks = tickers.filter((t) => !isBlurred(t));
   const hiddenStocks = tickers.filter((t) => isBlurred(t));
@@ -145,8 +144,7 @@ export const CrossShowPanel: React.FC<Props> = ({ episode, data, sectorPerf, sec
     <>
       {tickers.length > 0 && (
         <section className="bg-card border border-border rounded-md p-5 sm:p-6 xl:p-3 mb-3.5" aria-labelledby={`${titleId}-stocks`}>
-          <h3 id={`${titleId}-stocks`} className="heading-accent text-lg font-semibold text-foreground mb-2">提及個股</h3>
-          {lead}
+          <h3 id={`${titleId}-stocks`} className="heading-accent text-lg font-semibold text-foreground mb-3">提及個股</h3>
           {/* Same row shape as 提及題材 (SectorExposureList): name + one muted line on the
               left, then fixed-width stance, change and a chevron-sized gap, so the two
               sections' change columns line up. */}
@@ -182,7 +180,6 @@ export const CrossShowPanel: React.FC<Props> = ({ episode, data, sectorPerf, sec
       {themeExposures.length > 0 && (
         <section className="bg-card border border-border rounded-md p-5 sm:p-6 xl:p-3 mb-3.5" aria-labelledby={`${titleId}-themes`}>
           <h3 id={`${titleId}-themes`} className="heading-accent text-lg font-semibold text-foreground mb-3.5">提及題材</h3>
-          {tickers.length === 0 && lead}
           {!isMember ? (
             <>
               <SectorExposureList exposures={clearThemes} perfMap={sectorPerf} loading={sectorPerfLoading} notes={themeNotes} />
