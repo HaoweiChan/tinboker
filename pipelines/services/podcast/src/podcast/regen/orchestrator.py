@@ -1140,6 +1140,11 @@ def commit(
         except Exception as exc:
             raise RegenError(f"ticker_insights replacement failed: {exc}") from exc
 
+    if notify_platform:
+        from shared.platform_client import sync_episode_mentions
+
+        sync_episode_mentions(episode_id)
+
     # 3. Refresh the platform caches by replaying the user-visible fields through the
     #    backend's PATCH (the debug-editor write path). That ONE call busts the episode
     #    Redis cache, the ticker_insights:* sentiment cache (when related_tickers

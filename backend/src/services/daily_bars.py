@@ -61,6 +61,28 @@ def read_bars(ticker: str, from_date: str, to_date: str) -> List[Dict[str, Any]]
     return []
 
 
+def aggregate(bars: List[Dict[str, Any]], timeframe: Optional[str]) -> List[Dict[str, Any]]:
+    """Roll daily sessions into calendar weeks (Monday) or months, including partial periods."""
+    if timeframe not in ("1W", "1M"):
+        return bars
+    periods: Dict[str, Dict[str, Any]] = {}
+    for bar in sorted(bars, key=lambda b: b["date"]):
+        day = _day(bar["date"])
+        start = day - timedelta(days=day.weekday()) if timeframe == "1W" else day.replace(day=1)
+        key = start.strftime("%Y-%m-%d")
+        close = bar["close"]
+        high = bar["high"] if bar.get("high") is not None else close
+        low = bar["low"] if bar.get("low") is not None else close
+        if key not in periods:
+            periods[key] = {"date": key, "open": bar["open"] if bar.get("open") is not None else close,
+                            "high": high, "low": low, "close": close, "volume": bar.get("volume") or 0}
+        else:
+            period = periods[key]
+            period.update(high=max(period["high"], high), low=min(period["low"], low), close=close,
+                          volume=period["volume"] + (bar.get("volume") or 0))
+    return list(periods.values())
+
+
 def covers(bars: List[Dict[str, Any]], from_date: str) -> bool:
     return bool(bars) and _day(bars[0]["date"]) <= _day(from_date) + timedelta(days=COVERAGE_SLACK_DAYS)
 

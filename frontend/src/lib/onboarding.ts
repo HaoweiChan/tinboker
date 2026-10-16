@@ -36,6 +36,17 @@ export interface ChangelogEntry {
 //   docs/workflows/deploy-flow.md § "In-app changelog (What's new)".
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.14.10',
+    date: '2026-10',
+    items: [
+      '會員方案頁加上實際畫面示意圖，一眼看懂訂閱後能看到什麼。',
+      '電腦版的「提及個股」「提及題材」移到右側欄，版面更清爽。',
+      '新集數上架後，提及的個股與題材幾分鐘內就會出現。',
+      '個股週線、月線更穩定，價格載入時會有動畫提示。',
+      '新增美股節目 CNBC Fast Money。',
+    ],
+  },
+  {
     version: '0.14.9',
     date: '2026-10',
     items: [

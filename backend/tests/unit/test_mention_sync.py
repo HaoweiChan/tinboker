@@ -588,3 +588,162 @@ def test_sync_mentions_failed_source_does_not_delete(session, monkeypatch, menti
         monkeypatch.setattr(ms, "_scan_sector_exposures", fail)
         assert ms.sync_sector_mentions(session) == 0
     assert session.query(ContentMention).count() == 1
+
+
+@pytest.fixture
+def episode_source(session, monkeypatch):
+    from unittest.mock import Mock
+    from src.services import postgres_mirror_service
+
+    reader = Mock()
+    reader.get_document.return_value = {
+        "id": "target", "podcast_name": "Fast Money",
+        "spotify_release_date": "2026-10-15",
+        "sector_exposures": [{
+            "exposure_id": "semiconductors", "display_name": "半導體",
+            "resolved_tickers": [{"ticker": "NVDA"}], "mention_text": "chips",
+        }],
+    }
+    reader.query_collection_group.return_value = [_insight_row("target", "NVDA")]
+    monkeypatch.setattr(postgres_mirror_service, "content_read_service", lambda: reader)
+    monkeypatch.setattr(ms, "get_session", lambda: iter([session]))
+    return reader
+
+
+def test_episode_sync_inserts_and_reuses_derivation(session, episode_source):
+    assert ms.sync_episode_mentions("target") == {"ticker_mentions": 1, "sector_mentions": 1}
+    assert ms.sync_episode_mentions("target") == {"ticker_mentions": 0, "sector_mentions": 0}
+    rows = {row.mention_key: row for row in session.query(ContentMention)}
+    assert set(rows) == {"target:ticker:NVDA", "target:sector:semiconductors"}
+    assert rows["target:ticker:NVDA"].mention_start_s == 750
+    assert rows["target:ticker:NVDA"].sentiment_label == "BULLISH"
+    assert rows["target:sector:semiconductors"].payload == {
+        "members": ["NVDA"], "mention_text": "chips",
+    }
+    episode_source.get_document.assert_called_with("episodes", "target")
+    episode_source.query_collection_group.assert_called_with(
+        "tickers", filters=[("episode_id", "==", "target")],
+    )
+
+
+def test_episode_sync_reconciles_only_target_including_empty(session, episode_source):
+    ms.sync_episode_mentions("target")
+    episode_source.get_document.return_value["id"] = "other"
+    episode_source.query_collection_group.return_value = [_insight_row("other", "NVDA")]
+    ms.sync_episode_mentions("other")
+    other_rows = {r.mention_key: r.id for r in session.query(ContentMention)
+                  if r.episode_id == "other"}
+
+    episode_source.get_document.return_value["sector_exposures"] = []
+    episode_source.query_collection_group.return_value = [_insight_row("target", "AAPL")]
+    ms.sync_episode_mentions("target")
+    assert {r.mention_key for r in session.query(ContentMention)} == {
+        "target:ticker:AAPL", *other_rows,
+    }
+    episode_source.query_collection_group.return_value = []
+    ms.sync_episode_mentions("target")
+    assert {r.mention_key: r.id for r in session.query(ContentMention)} == other_rows
+
+
+def test_episode_sync_heals_regenerated_stance(session, episode_source):
+    ms.sync_episode_mentions("target")
+    episode_source.query_collection_group.return_value[0].update(
+        sentiment_label="BEARISH", bluf_thesis="Changed thesis",
+        reasons=[{"start_time": 15000}],
+    )
+    ms.sync_episode_mentions("target")
+    row = session.query(ContentMention).filter_by(mention_type="ticker").one()
+    assert (row.sentiment_label, row.thesis, row.mention_start_s) == (
+        "BEARISH", "Changed thesis", 15,
+    )
+
+
+@pytest.mark.parametrize("failure", ["missing", "read_error", "sector_error"])
+def test_episode_sync_failure_preserves_rows(session, episode_source, monkeypatch, failure):
+    ms.sync_episode_mentions("target")
+    before = {r.mention_key: r.id for r in session.query(ContentMention)}
+    if failure == "missing":
+        episode_source.get_document.return_value = None
+    elif failure == "read_error":
+        episode_source.query_collection_group.side_effect = RuntimeError("source unavailable")
+    else:
+        episode_source.query_collection_group.return_value = []
+        monkeypatch.setattr(ms, "_sync_sector_records", lambda *a: (_ for _ in ()).throw(
+            RuntimeError("sector failure"),
+        ))
+    with pytest.raises((ValueError, RuntimeError)):
+        ms.sync_episode_mentions("target")
+    assert {r.mention_key: r.id for r in session.query(ContentMention)} == before
+
+
+def test_episode_sync_retraction_clears_only_target(session, episode_source):
+    ms.sync_episode_mentions("target")
+    episode_source.get_document.return_value["retracted_at"] = "2026-10-16"
+    ms.sync_episode_mentions("target")
+    assert session.query(ContentMention).count() == 0
+
+
+def test_episode_sync_refreshes_existing_sector_details(session, episode_source):
+    ms.sync_episode_mentions("target")
+    episode_source.get_document.return_value["sector_exposures"][0].update(
+        resolved_tickers=[{"ticker": "AMD"}], mention_text="new evidence", confidence=0.8,
+    )
+    ms.sync_episode_mentions("target")
+    row = session.query(ContentMention).filter_by(mention_type="sector").one()
+    assert row.confidence == 0.8
+    assert row.payload == {"members": ["AMD"], "mention_text": "new evidence"}
+
+
+@pytest.mark.parametrize("kind", ["ticker", "sector", "episode"])
+def test_sync_locks_before_reading_sources(session, episode_source, monkeypatch, kind):
+    locked = False
+
+    def lock(db):
+        nonlocal locked
+        assert db is session
+        locked = True
+
+    def read(*args, **kwargs):
+        assert locked
+        return []
+
+    monkeypatch.setattr(ms, "_lock_mention_sync", lock)
+    if kind == "ticker":
+        monkeypatch.setattr(ms, "_fetch_recent_insight_rows", read)
+        ms.sync_ticker_mentions(session)
+    elif kind == "sector":
+        monkeypatch.setattr(ms, "_scan_sector_exposures", read)
+        ms.sync_sector_mentions(session)
+    else:
+        episode_source.query_collection_group.side_effect = read
+        ms.sync_episode_mentions("target")
+    assert not session.in_transaction()  # commit releases the transaction-scoped lock
+
+
+def test_postgres_reconciliation_uses_shared_transaction_lock():
+    from unittest.mock import Mock
+    db = Mock()
+    db.get_bind.return_value.dialect.name = "postgresql"
+    ms._lock_mention_sync(db)
+    statement, params = db.execute.call_args.args
+    assert "pg_advisory_xact_lock" in str(statement)
+    assert params == {"key": "content-mentions-sync"}
+
+
+def test_regenerated_sector_members_invalidate_only_changed_snapshot(session, episode_source):
+    ms.sync_episode_mentions("target")
+    mention = session.query(ContentMention).filter_by(mention_type="sector").one()
+    session.add(SectorPerformanceSnapshot(
+        mention_id=mention.id, exposure_id=mention.exposure_id, member_count=1,
+        mention_date="2026-10-15",
+        r1d=1, r5d=2, r20d=3, r60d=4,
+    ))
+    session.commit()
+    ms.sync_episode_mentions("target")
+    assert session.query(SectorPerformanceSnapshot).count() == 1
+    episode_source.get_document.return_value["sector_exposures"][0]["resolved_tickers"] = [
+        {"ticker": "AMD"},
+    ]
+    ms.sync_episode_mentions("target")
+    assert session.query(SectorPerformanceSnapshot).count() == 0
+    assert ms.compute_sector_snapshots(session) == 1

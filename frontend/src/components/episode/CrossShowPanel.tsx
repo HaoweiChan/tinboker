@@ -1,15 +1,15 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useId, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ChevronDown, Lock } from 'lucide-react';
 import { getSentimentDisplay } from '@/lib/sentiment';
 import { SectorExposureList } from '@/components/episode/SectorExposureList';
-import { getEpisodeCrossShow } from '@/services/api/mentions';
 import type { Episode, SectorBoardItem, SectorExposure } from '@/services/api/podcasts';
-import { useStockPriceSinceMap, isRecentEpisode } from '@/hooks/useStockPriceSinceMap';
+import { isRecentEpisode } from '@/hooks/useStockPriceSinceMap';
 import { useAppStore } from '@/store/useAppStore';
 import { ChangePct } from '@/components/topics/ChangePct';
+import type { useCrossShowPanelData } from '@/hooks/useCrossShowPanelData';
 import type { CrossShowResponse } from '@/validation/schemas';
-import { crossShowLead, isOpposite, othersCounts, othersLean, stanceZh } from '../../../shared/crossShow.js';
+import { isOpposite, othersCounts, othersLean, stanceZh } from '../../../shared/crossShow.js';
 
 type Subject = CrossShowResponse['subjects'][number];
 // Rows of each kind a non-member sees unblurred when the public route previews none.
@@ -51,6 +51,7 @@ const subjectKey = (subject: Subject) => `${subject.mention_type}:${subject.tick
 
 interface Props {
   episode: Episode;
+  panelData: ReturnType<typeof useCrossShowPanelData>;
   data: CrossShowResponse | null;
   sectorPerf: Map<string, SectorBoardItem>;
   sectorPerfLoading: boolean;
@@ -58,28 +59,10 @@ interface Props {
 
 /** 提及個股 + 提及題材, both from this episode's content_mentions. Other shows' per-subject
  *  comparisons are members-only; the themes keep the icon rows of SectorExposureList. */
-export const CrossShowPanel: React.FC<Props> = ({ episode, data, sectorPerf, sectorPerfLoading }) => {
+export const CrossShowPanel: React.FC<Props> = ({ episode, data, sectorPerf, sectorPerfLoading, panelData }) => {
   const stockColorMode = useAppStore((s) => s.stockColorMode);
-  const isMember = useAppStore((s) => !!s.user?.is_member);
-  const [detail, setDetail] = useState<CrossShowResponse | null>(null);
-  const [detailFailed, setDetailFailed] = useState(false);
-  useEffect(() => {
-    setDetail(null);
-    setDetailFailed(false);
-    if (!isMember) return;
-    let alive = true;
-    getEpisodeCrossShow(episode.id, true)
-      .then((res) => { if (alive) setDetail(res); })
-      .catch(() => { if (alive) setDetailFailed(true); });
-    return () => { alive = false; };
-  }, [episode.id, isMember]);
-
-  // The hook's input uses only content_mentions, never summary-derived ticker links.
-  const priceEpisodes = useMemo(() => [{
-    ...episode,
-    related_tickers: (data?.subjects ?? []).flatMap((s) => s.mention_type === 'ticker' && s.ticker ? [s.ticker] : []),
-  }], [episode, data]);
-  const priceSinceMap = useStockPriceSinceMap(priceEpisodes);
+  const titleId = useId();
+  const { isMember, detail, detailFailed, priceSinceMap } = panelData;
   // Members get every comparison; everyone else gets the public route's FREE_PREVIEW_ROWS.
   const comparisons = new Map((isMember ? detail?.rows ?? [] : data?.rows ?? []).map((r) => [subjectKey(r), r]));
 
@@ -116,7 +99,6 @@ export const CrossShowPanel: React.FC<Props> = ({ episode, data, sectorPerf, sec
     const row = comparisons.get(subjectKey(t));
     return row && row.others.shows > 0 ? [[t.exposure_id!, `${row.others.shows} 個節目也談到`] as const] : [];
   }));
-  const lead = <p className="text-sm text-muted-foreground leading-[1.65] mb-3">{crossShowLead(data)}</p>;
 
   const clearStocks = tickers.filter((t) => !isBlurred(t));
   const hiddenStocks = tickers.filter((t) => isBlurred(t));
@@ -161,9 +143,8 @@ export const CrossShowPanel: React.FC<Props> = ({ episode, data, sectorPerf, sec
   return (
     <>
       {tickers.length > 0 && (
-        <section className="bg-card border border-border rounded-md p-5 sm:p-6 mb-3.5" aria-labelledby="cross-show-title">
-          <h3 id="cross-show-title" className="heading-accent text-lg font-semibold text-foreground mb-2">提及個股</h3>
-          {lead}
+        <section className="bg-card border border-border rounded-md p-5 sm:p-6 xl:p-3 mb-3.5" aria-labelledby={`${titleId}-stocks`}>
+          <h3 id={`${titleId}-stocks`} className="heading-accent text-lg font-semibold text-foreground mb-3">提及個股</h3>
           {/* Same row shape as 提及題材 (SectorExposureList): name + one muted line on the
               left, then fixed-width stance, change and a chevron-sized gap, so the two
               sections' change columns line up. */}
@@ -197,9 +178,8 @@ export const CrossShowPanel: React.FC<Props> = ({ episode, data, sectorPerf, sec
         </section>
       )}
       {themeExposures.length > 0 && (
-        <section className="bg-card border border-border rounded-md p-5 sm:p-6 mb-3.5" aria-labelledby="cross-show-themes-title">
-          <h3 id="cross-show-themes-title" className="heading-accent text-lg font-semibold text-foreground mb-3.5">提及題材</h3>
-          {tickers.length === 0 && lead}
+        <section className="bg-card border border-border rounded-md p-5 sm:p-6 xl:p-3 mb-3.5" aria-labelledby={`${titleId}-themes`}>
+          <h3 id={`${titleId}-themes`} className="heading-accent text-lg font-semibold text-foreground mb-3.5">提及題材</h3>
           {!isMember ? (
             <>
               <SectorExposureList exposures={clearThemes} perfMap={sectorPerf} loading={sectorPerfLoading} notes={themeNotes} />
