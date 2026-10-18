@@ -1959,8 +1959,9 @@ class PodcastService:
         inst_foreign = inst.get("foreign") or {}
         caps = await self._tw_market_caps_cached()
         us_caps = await self._us_market_caps_cached(all_tickers)
+        # 成交值 is TW-only: a theme's US members (NVDA, TSM ADR …) trade an order of
+        # magnitude more dollar volume and would decide every bubble's size.
         trading_windows = await self._tw_trading_value_windows_cached(all_tickers)
-        us_trading_windows = await self._us_trading_value_windows_cached(all_tickers)
         out: list[dict] = []
         for s in board:
             members = s.get("members") or []
@@ -1973,7 +1974,6 @@ class PodcastService:
             exposure_tvals = {
                 window: sum(
                     _fin(values.get((m.get("ticker") or "").strip(), 0.0))
-                    + _fin(us_trading_windows.get(window, {}).get((m.get("ticker") or "").strip().upper(), 0.0))
                     for m in members
                 )
                 for window, values in trading_windows.items()
@@ -2115,60 +2115,6 @@ class PodcastService:
             await cache_set(cache_key, json.dumps(caps), CACHE_TTL["stock_ohlcv"])
         return caps or {}
 
-    def _read_us_trading_value_windows_twd(
-        self,
-        tickers: list[str],
-        windows: tuple[int, ...] = (1, 7, 30, 90),
-    ) -> dict[str, dict[str, float]]:
-        """Read warmed US OHLCV and return ``{window: {ticker: close*volume NT$}}``."""
-        from src.database.models import StockDailyOHLC
-        from src.services.providers.base import is_us_ticker
-
-        us_tickers = sorted({t.strip().upper() for t in tickers if is_us_ticker(t.strip())})
-        totals: dict[str, dict[str, float]] = {str(window): {} for window in windows}
-        if not us_tickers:
-            return totals
-
-        start = (datetime.utcnow() - timedelta(days=max(windows) + 20)).strftime("%Y-%m-%d")
-        rows_by_ticker: dict[str, list] = {}
-        for session in get_session():
-            rows = (
-                session.query(
-                    StockDailyOHLC.ticker,
-                    StockDailyOHLC.date,
-                    StockDailyOHLC.close,
-                    StockDailyOHLC.volume,
-                )
-                .filter(StockDailyOHLC.ticker.in_(us_tickers), StockDailyOHLC.date >= start)
-                .order_by(StockDailyOHLC.ticker.asc(), StockDailyOHLC.date.asc())
-                .all()
-            )
-            for row in rows:
-                rows_by_ticker.setdefault(row.ticker, []).append(row)
-            break
-
-        for ticker, rows in rows_by_ticker.items():
-            dates = [row.date for row in rows if row.date]
-            if not dates:
-                continue
-            latest = datetime.strptime(max(dates), "%Y-%m-%d").date()
-            cutoffs = {
-                str(window): latest - timedelta(days=window - 1)
-                for window in windows
-            }
-            for row in rows:
-                if not row.date or not row.close or not row.volume:
-                    continue
-                try:
-                    row_date = datetime.strptime(row.date, "%Y-%m-%d").date()
-                    value = float(row.close) * float(row.volume) * settings.usd_twd_rate
-                except (TypeError, ValueError):
-                    continue
-                for window_key, cutoff in cutoffs.items():
-                    if row_date >= cutoff:
-                        totals[window_key][ticker] = totals[window_key].get(ticker, 0.0) + value
-        return totals
-
     def _read_tw_trading_value_windows(
         self,
         tickers: list[str],
@@ -2293,30 +2239,6 @@ class PodcastService:
                         total[window_key][ticker] = total[window_key].get(ticker, 0.0) + tval
                         foreign[window_key][ticker] = foreign[window_key].get(ticker, 0.0) + fval
         return {"total": total, "foreign": foreign}
-
-    async def _us_trading_value_windows_cached(self, tickers: list[str]) -> dict[str, dict[str, float]]:
-        """``{window_days: {ticker: cumulative trading value NT$}}`` for warmed US stocks."""
-        universe = ",".join(sorted({ticker.strip().upper() for ticker in tickers if ticker.strip()}))
-        universe_key = hashlib.sha1(universe.encode("utf-8")).hexdigest()[:12] if universe else "empty"
-        cache_key = f"sectors:us_trading_value_windows_twd:v1:{universe_key}"
-        memory_cache = getattr(self, "_us_trading_value_windows_memory_cache", {})
-        cached_at, memory_value = memory_cache.get(cache_key, (0.0, None))
-        if memory_value and time.time() - cached_at < CACHE_TTL["stock_ohlcv"]:
-            return memory_value
-
-        cached = await cache_get(cache_key)
-        if cached:
-            try:
-                vals = json.loads(cached)
-                self._us_trading_value_windows_memory_cache = {cache_key: (time.time(), vals)}
-                return vals
-            except Exception:
-                pass
-        vals = await asyncio.to_thread(self._read_us_trading_value_windows_twd, tickers)
-        if vals:
-            self._us_trading_value_windows_memory_cache = {cache_key: (time.time(), vals)}
-            await cache_set(cache_key, json.dumps(vals), CACHE_TTL["stock_ohlcv"])
-        return vals or {}
 
     # ── Theme discovery (admin curation queue) ────────────────────────────────
     _THEME_SCAN_FIELDS = [

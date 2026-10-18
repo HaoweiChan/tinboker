@@ -7,6 +7,7 @@ import sys
 from typing import Any
 
 from shared.sectors import (
+    _clean_member,
     flatten_exposure_ids,
     flatten_unresolved_trend_ids,
     load_universe,
@@ -113,9 +114,12 @@ def _ticker_derived_candidates(
             "confidence": 0.6,
             "icon_id": exposure.get("icon_id"),
             "color_hex": exposure.get("color_hex"),
+            # The member that triggered the candidate leads, so the verifier sees it.
             "resolved_tickers": [
                 {"ticker": str(m.get("ticker") or "").upper(), "name": str(m.get("name") or "")}
-                for m in curated_members[:5]
+                for m in sorted(
+                    curated_members, key=lambda m: str(m.get("ticker") or "").upper() != matched_ticker
+                )[:5]
             ],
             "total_matches": len(curated_members),
             "start_index": None,
@@ -201,12 +205,25 @@ def derive_sector_exposures(state: PipelineState) -> dict[str, Any]:
     verified_exposures = []
     to_verify = []
 
+    # Overlap is judged on the FULL membership, not the ``max_tickers`` slice in
+    # ``resolved_tickers``: that slice is TW-first, so a US show naming NVDA would never
+    # meet a theme's US members in it. Mentioned members lead the stored list.
+    universe = load_universe()
+    members_by_id = {
+        normalize_exposure_id(e.get("exposure_id")): e.get("members") or []
+        for e in universe.get("exposures", [])
+    }
     for exp in sector_exposures:
-        resolved_tickers = exp.get("resolved_tickers") or []
-        constituent_tickers = {str(t.get("ticker", "")).strip().upper() for t in resolved_tickers}
+        members = members_by_id.get(str(exp.get("exposure_id"))) or exp.get("resolved_tickers") or []
+        mentioned = [m for m in members if str(m.get("ticker", "")).strip().upper() in extracted_tickers]
 
         # If any constituent ticker overlap exists, auto-approve
-        if constituent_tickers & extracted_tickers:
+        if mentioned:
+            exp = dict(exp)
+            rest = [m for m in members if m not in mentioned]
+            exp["resolved_tickers"] = [
+                _clean_member(m) for m in (mentioned + rest)[: universe.get("max_tickers") or len(members)]
+            ]
             verified_exposures.append(exp)
         else:
             to_verify.append(exp)

@@ -166,3 +166,22 @@ def test_verifier_error_fails_closed_for_ticker_derived_but_open_for_keyword_mat
     ids = set(out["sector_exposure_ids"])
     assert "sector_keyword_matched" in ids   # fail-open (unchanged existing behavior)
     assert "sector_test_0" not in ids        # fail-closed (A6 candidates only)
+
+
+def test_alias_match_auto_approves_on_a_member_outside_the_resolved_slice(monkeypatch):
+    """A US show naming NVDA must meet the theme's US member even though the stored
+    ``resolved_tickers`` slice is TW-first and NVDA sits past ``max_tickers``."""
+    tw = [{"ticker": str(1000 + i), "name": f"TW{i}", "market": "TW", "source": "ictpex"} for i in range(12)]
+    nvda = {"ticker": "NVDA", "name": "輝達", "market": "US", "source": "curated"}
+    universe = {"max_tickers": 10, "exposures": [{"exposure_id": "sector_ai", "members": [*tw, nvda]}]}
+    alias_hit = {"exposure_id": "sector_ai", "display_name": "AI", "resolved_tickers": tw[:10]}
+    monkeypatch.setattr(sx, "load_universe", lambda: universe)
+    monkeypatch.setattr(sx, "resolve_clustered_events",
+                        lambda _e: {"sector_exposures": [alias_hit], "unresolved_market_trends": []})
+    monkeypatch.setattr(sx, "_verify_relevance", lambda _x: (_ for _ in ()).throw(AssertionError("verifier called")))
+
+    out = sx.derive_sector_exposures(_state(ticker="NVDA"))
+
+    assert [e["exposure_id"] for e in out["sector_exposures"]] == ["sector_ai"]
+    assert out["sector_exposures"][0]["resolved_tickers"][0]["ticker"] == "NVDA"
+    assert len(out["sector_exposures"][0]["resolved_tickers"]) == 10

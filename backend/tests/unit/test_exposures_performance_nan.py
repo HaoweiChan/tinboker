@@ -43,7 +43,6 @@ async def test_nan_values_do_not_500_and_are_treated_as_zero():
     svc._tw_trading_value_windows_cached = AsyncMock(
         return_value={"1": {"2330": NAN, "2454": 200.0}}
     )
-    svc._us_trading_value_windows_cached = AsyncMock(return_value={})
 
     out = await svc.exposures_performance()
 
