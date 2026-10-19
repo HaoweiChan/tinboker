@@ -113,15 +113,18 @@ def _english_variants(alias: str) -> set[str]:
     return variants
 
 
-def _member_sort_key(member: dict[str, Any]) -> tuple[int, float, float, str]:
+def _member_sort_key(member: dict[str, Any]) -> tuple[int, int, float, float, str]:
+    # TW members first: the taxonomy is TW-led and ``resolved_tickers`` keeps only the
+    # first ``max_tickers``, so a theme's US members must never crowd out its TW ones.
+    market = 0 if str(member.get("market") or "TW").upper() == "TW" else 1
     source = str(member.get("source") or "")
     curated_rank = int(member.get("rank") or 1_000_000)
     if source == "curated":
-        return (0, curated_rank, 0, str(member.get("ticker") or ""))
+        return (market, 0, curated_rank, 0, str(member.get("ticker") or ""))
     market_cap_rank = member.get("market_cap_rank")
     liquidity_rank = member.get("liquidity_rank")
     rank_value = float(market_cap_rank or liquidity_rank or curated_rank or 1_000_000)
-    return (1, rank_value, float(curated_rank), str(member.get("ticker") or ""))
+    return (market, 1, rank_value, float(curated_rank), str(member.get("ticker") or ""))
 
 
 def _clean_member(member: dict[str, Any]) -> dict[str, Any]:

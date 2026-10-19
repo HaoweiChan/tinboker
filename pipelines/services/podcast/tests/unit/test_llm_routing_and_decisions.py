@@ -171,7 +171,7 @@ def test_sector_verifier_uses_the_decisions_path_and_the_cutoff(monkeypatch):
     assert [a["role"] for a in asked] == ["sector_verifier", "sector_verifier"]
     assert asked[0]["questions"]["is_relevant"]["type"] == "noul"
     # The criteria come from the prompt file, so the two paths cannot drift apart.
-    assert "Taiwan-listed" in asked[0]["questions"]["is_relevant"]["instructions"]
+    assert "TW-listed numeric codes" in asked[0]["questions"]["is_relevant"]["instructions"]
 
 
 def test_sector_verifier_still_batches_on_a_chat_model(monkeypatch):

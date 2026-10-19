@@ -208,3 +208,14 @@ def test_backup_fallback_does_not_poison_live_universe_cache(monkeypatch, caplog
     out = resolve_text("live after backup")
 
     assert out["sector_exposures"][0]["exposure_id"] == "sector_live_after_backup"
+
+
+def test_us_members_sort_after_every_tw_member() -> None:
+    from shared.sectors import _member_sort_key
+
+    members = [
+        {"ticker": "NVDA", "market": "US", "source": "curated"},
+        {"ticker": "3661", "market": "TW", "source": "ictpex"},
+        {"ticker": "2330", "market": "TW", "source": "curated"},
+    ]
+    assert [m["ticker"] for m in sorted(members, key=_member_sort_key)] == ["2330", "3661", "NVDA"]

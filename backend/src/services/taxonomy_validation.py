@@ -13,6 +13,7 @@ from typing import Any
 
 EMPTY_REASON_BASELINE = 1870
 REQUIRE_MEMBER_REASONS_ENV = "TAXONOMY_REQUIRE_MEMBER_REASONS"
+MEMBER_MARKETS = frozenset({"TW", "US"})
 
 
 @dataclass
@@ -40,14 +41,15 @@ def validate_taxonomy(
     violations so API callers can see the exact offending sector/ticker pairs.
     """
     redirects = redirects or {}
-    us = [
+    # Members are TW or US listings; anything else has no price source behind it.
+    foreign = [
         f"{sector.get('exposure_id')}/{member.get('ticker')}"
         for sector in sectors
         for member in sector.get("members") or []
-        if (member or {}).get("market") != "TW"
+        if (member or {}).get("market") not in MEMBER_MARKETS
     ]
-    if us:
-        raise TaxonomyValidationError("US tickers leaked into the TW taxonomy", us[:10])
+    if foreign:
+        raise TaxonomyValidationError("members outside TW/US markets", foreign[:10])
 
     empty = [str(s.get("exposure_id") or "") for s in sectors if not s.get("members")]
     if empty:

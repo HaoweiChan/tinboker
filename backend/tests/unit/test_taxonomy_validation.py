@@ -68,14 +68,16 @@ def test_redirect_target_must_exist():
     assert exc.value.offenders == ["sector_missing"]
 
 
-def test_rejects_empty_sector_and_us_member():
+def test_rejects_empty_sector_and_non_tw_us_member():
     with pytest.raises(TaxonomyValidationError) as empty_exc:
         validate_taxonomy([_sector("sector_empty", [])], {}, enforce=True)
     assert empty_exc.value.offenders == ["sector_empty"]
 
-    with pytest.raises(TaxonomyValidationError) as us_exc:
-        validate_taxonomy([_sector("sector_us", [_member("AAPL", market="US")])], {}, enforce=True)
-    assert us_exc.value.rule == "US tickers leaked into the TW taxonomy"
+    validate_taxonomy([_sector("sector_us", [_member("AAPL", market="US")])], {}, enforce=False)
+
+    with pytest.raises(TaxonomyValidationError) as jp_exc:
+        validate_taxonomy([_sector("sector_jp", [_member("6758.T", market="JP")])], {}, enforce=True)
+    assert jp_exc.value.rule == "members outside TW/US markets"
 
 
 def test_member_reason_requirement_default_off(monkeypatch):

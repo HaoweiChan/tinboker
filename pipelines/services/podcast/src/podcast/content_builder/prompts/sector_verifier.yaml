@@ -9,16 +9,16 @@ system: |
   - display_name: The name of the sector in Traditional Chinese.
   - keyword: The keyword alias (or ticker) that triggered the match.
   - context: The sentence and surrounding transcript context where the keyword/ticker was mentioned.
-  - resolved_tickers: The Taiwan-listed tickers that are ACTUAL curated members of this sector — use this to judge whether the companies being discussed in `context` are really these TW names, or something else entirely.
+  - resolved_tickers: The tickers that are ACTUAL curated members of this sector — Taiwan-listed (numeric codes like 2330) and, for some sectors, US-listed (like NVDA). Use this to judge whether the companies being discussed in `context` are really these members, or something else entirely.
 
-  IMPORTANT — the sector universe is TAIWAN-LISTED ONLY. Every sector's `resolved_tickers` are TW-listed companies. If `context` is substantively about a FOREIGN-listed company (e.g. a US-listed stock like Palantir/CrowdStrike/Cloudflare) rather than about the TW companies in `resolved_tickers` or the TW supply chain around them, set is_relevant = false — attaching a TW ticker basket to a US-stock discussion mislabels the sector even though the general theme (e.g. "資安"/"雲端") sounds related.
+  IMPORTANT — a sector covers ONLY its listed members and their supply chain. If `context` is substantively about a company that is neither in `resolved_tickers` nor part of that supply chain (e.g. a sector whose members are all TW-listed, while the host discusses Palantir/CrowdStrike/Cloudflare), set is_relevant = false — attaching that basket mislabels the sector even though the general theme (e.g. "資安"/"雲端") sounds related. Discussion of a US-listed company that IS in `resolved_tickers` counts as relevant.
 
   Analyze the context for each entry. Determine if the host is substantively discussing the sector's trend, investment value, or business outlook (is_relevant = true).
   Set is_relevant = false if:
   - The keyword is mentioned in passing or as a general metaphor (e.g., "加油" or "油價" as a general metaphor/expression, or checking "油價" purely as a macro geopolitical temperature gauge rather than discussing energy sector stocks or investment).
   - The keyword refers to a different meaning (e.g., "衛星" meaning a general metaphor or a past casual trade history mentioned in passing without current substance).
   - The context lacks substantive discussion about investing, business trends, or supply chain relevance of the sector.
-  - The context is substantively about a foreign (non-TW-listed) company's business, not about the sector's actual TW-listed members or supply chain.
+  - The context is substantively about a company outside `resolved_tickers` and its supply chain.
 
   Your output MUST be a valid JSON object matching this schema:
   {
@@ -42,9 +42,10 @@ user: |
 # calibrated probability and no prose, so the JSON-schema half of ``system`` is dropped
 # and only the judgement survives. Keep the two in sync — they are one rule, not two.
 noul_instructions: |
-  You are auditing one potential sector/theme exposure matched from a Taiwanese stock
-  podcast transcript. You are given the sector, the keyword or ticker that triggered the
-  match, the transcript context around it, and the sector's curated TW-listed members.
+  You are auditing one potential sector/theme exposure matched from a stock podcast
+  transcript (Taiwanese or US show). You are given the sector, the keyword or ticker that
+  triggered the match, the transcript context around it, and the sector's curated members
+  (TW-listed numeric codes, and for some sectors US-listed tickers).
 
   Answer YES only if the host is substantively discussing this sector's trend, investment
   value, or business outlook.
@@ -56,7 +57,7 @@ noul_instructions: |
     casual trade mentioned without current substance);
   - the context lacks substantive discussion of investing, business trends, or supply-chain
     relevance for this sector;
-  - the context is substantively about a FOREIGN-listed company (e.g. Palantir, CrowdStrike)
-    rather than the TW-listed members in resolved_tickers or the TW supply chain around them.
-    The sector universe is Taiwan-listed only — attaching a TW ticker basket to a US-stock
-    discussion mislabels the sector even when the theme (資安/雲端) sounds related.
+  - the context is substantively about a company that is neither in resolved_tickers nor in
+    their supply chain (e.g. Palantir discussed against an all-TW member list) — attaching
+    that basket mislabels the sector even when the theme (資安/雲端) sounds related. A
+    US-listed company that IS in resolved_tickers counts as relevant.
