@@ -31,6 +31,8 @@ class NewsDraftBody(BaseModel):
     article_id: str = Field(min_length=1, max_length=500)
     canonical_url: HttpUrl
     image_png_base64: str = Field(min_length=1, max_length=MAX_IMAGE_BYTES * 4 // 3 + 4)
+    stock_chart_png_base64: str | None = Field(default=None, max_length=MAX_IMAGE_BYTES * 4 // 3 + 4)
+    chart_ticker: str | None = Field(default=None, pattern=r"^[A-Z0-9.\-]{1,20}$")
     content_hash: str = Field(min_length=1, max_length=128)
     source: str = Field(min_length=1, max_length=100)
     published_at: AwareDatetime
@@ -92,9 +94,19 @@ def save_news_draft(body: NewsDraftBody) -> dict:
             logger.warning("News draft skipped: screenshot decode/storage failed (%s: %s)",
                            type(exc).__name__, exc)
             return {"status": "no_image"}
+        media = [{"type": "image", "path": url, "filename": filename}]
+        if body.stock_chart_png_base64 and body.chart_ticker:
+            try:
+                chart = _decode_screenshot(body.stock_chart_png_base64)
+                chart_filename = f"news-stock-{body.chart_ticker}-{uuid.uuid4().hex}.png"
+                chart_url = store_bytes(settings.promo_media_bucket, f"promo-media/{chart_filename}", chart)
+                if chart_url:
+                    media.append({"type": "image", "path": chart_url, "filename": chart_filename})
+            except Exception as exc:
+                logger.warning("News chart omitted: decode/storage failed (%s)", type(exc).__name__)
         row = PromoDraft(
             name=f"新聞草稿 · {body.source} · {headline}"[:200], text=body.text,
-            media=[{"type": "image", "path": url, "filename": filename}],
+            media=media,
             comments=[body.comment], platforms=["threads"], updated_by="news-pipeline@service",
             created_at=now.replace(tzinfo=None),
             news_source={"article_id": body.article_id, "canonical_url": str(body.canonical_url),
