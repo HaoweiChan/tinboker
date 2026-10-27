@@ -18,6 +18,7 @@ and returns the drafts without publishing — so the endpoint is always safe to 
 
 import asyncio
 import logging
+import re
 import urllib.parse
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
@@ -267,6 +268,14 @@ def _ticker_name(ticker: str) -> str:
     return ticker
 
 
+def stock_card_url(episode: Any, ticker: str) -> str:
+    """The stock's 60-session chart with this episode's air date marked and named."""
+    date = _air_date_tw(episode) or datetime.utcnow().strftime("%Y-%m-%d")
+    label = f"{speaker_for(_field(episode, 'podcast_name'))} {int(date[5:7])}/{int(date[8:])}"
+    q = urllib.parse.urlencode({"days": 60, "event": date, "label": label})
+    return f"{settings.public_api_url.rstrip('/')}/api/og/stock/{ticker}.png?{q}"
+
+
 def compose_ticker_story(episode: Any) -> dict:
     """The frame of a same-day ticker story: which stock, the marked chart, the link.
     The text itself is written by the pipeline at publish time (``_story`` in
@@ -274,11 +283,106 @@ def compose_ticker_story(episode: Any) -> dict:
     episode_id = _field(episode, "id") or _field(episode, "episode_id") or ""
     ticker = str((_field(episode, "related_tickers") or [""])[0]).upper()
     date = _air_date_tw(episode) or datetime.utcnow().strftime("%Y-%m-%d")
-    label = f"{speaker_for(_field(episode, 'podcast_name'))} {int(date[5:7])}/{int(date[8:])}"
-    q = urllib.parse.urlencode({"days": 60, "event": date, "label": label})
     return {"episode_id": episode_id, "ticker": ticker, "mention_date": date, "podcaster": _field(episode, "podcast_name"),
-            "image_url": f"{settings.public_api_url.rstrip('/')}/api/og/stock/{ticker}.png?{q}",
-            "url": episode_url(episode_id)}
+            "image_url": stock_card_url(episode, ticker), "url": episode_url(episode_id)}
+
+
+def _written_post(episode: Any) -> str:
+    thread = _field(episode, "social_thread")
+    post = thread.get("post") if isinstance(thread, dict) else None
+    return post.strip() if isinstance(post, str) else ""
+
+
+def _ticker_labels(tickers: set[str]) -> dict[str, list[str]]:
+    """What a post calls each ticker besides its code: the zh-TW name, the English
+    name and the aliases (輝達 / Nvidia, SpaceX for SPCX). Empty on any failure — the
+    caller then posts without a chart."""
+    try:
+        from src.database.models import StockTranslation
+        from src.database.postgres import get_session
+        for db in get_session():
+            rows = (db.query(StockTranslation.ticker, StockTranslation.name_zh_tw,
+                             StockTranslation.name_en, StockTranslation.aliases)
+                    .filter(StockTranslation.ticker.in_(sorted(tickers))).all())
+            return {t: _spoken([zh, en, *(aliases or [])]) for t, zh, en, aliases in rows}
+    except Exception as e:  # noqa: BLE001
+        logger.info("ticker label lookup failed: %s", e)
+    return {}
+
+
+# ponytail: the suffixes a post drops (美光科技 is said 美光). Grow with the misses.
+_ZH_SUFFIXES = ("科技", "集團", "控股", "公司")
+
+
+def _spoken(names: list) -> list[str]:
+    out = []
+    for n in names:
+        n = n.strip() if isinstance(n, str) else ""
+        out.append(n)
+        for suffix in _ZH_SUFFIXES:
+            if n.endswith(suffix) and len(n) - len(suffix) >= 2:
+                out.append(n[: -len(suffix)])
+    return [n for n in out if len(n) >= 2]
+
+
+# ponytail: a code that is also an everyday word in these posts. Grow it when a
+# chart lands on the wrong stock, not before.
+_NOT_A_CODE = {"AI"}
+
+
+def _first_at(text: str, label: str, *, code: bool = False) -> int:
+    """Where ``label`` first appears, or -1. Latin labels must stand alone (MU is not
+    the MU in MUSE). Names match in any case (Coreweave); so do codes of four letters
+    or more, because a post writes META as Meta — and 臉書 is the stored zh name. Short
+    codes match only as written: BE and ON are also words."""
+    if code and (label in _NOT_A_CODE or len(label) < 2):
+        return -1
+    if label.isascii():
+        flags = re.I if not code or len(label) >= 4 else 0
+        m = re.search(rf"(?<![A-Za-z0-9]){re.escape(label)}(?![A-Za-z0-9])", text, flags)
+        return m.start() if m else -1
+    return text.find(label)
+
+
+# The lead stock must be named in the hook. On the 29 episode posts of 10-15..10-25
+# every right pick sat within the first 26 characters (台光電, 聯發科, Meta, 寶僑 …);
+# every wrong one was past 68 — a macro post that names Apple in its seventh line.
+LEAD_WITHIN = 40
+
+
+def lead_ticker(episode: Any) -> Optional[str]:
+    """The stock the written post is about: of the episode's tickers, the one the post
+    names first, if it names it in the opening. ``related_tickers`` is alphabetical, so
+    its head (AAPL, AMZN) says nothing. None otherwise — a macro post stays a macro post."""
+    text = _written_post(episode)
+    tickers = list(dict.fromkeys(str(t).upper() for t in (_field(episode, "related_tickers") or []) if t))
+    if not text or not tickers:
+        return None
+    labels = _ticker_labels(set(tickers))
+    best: Optional[tuple[int, str]] = None
+    for t in tickers:
+        hits = [p for p in (_first_at(text, t, code=True), *(_first_at(text, n) for n in labels.get(t, [])))
+                if p >= 0]
+        if hits and (best is None or min(hits) < best[0]):
+            best = (min(hits), t)
+    return best[1] if best and best[0] < LEAD_WITHIN else None
+
+
+def compose_chart_post(episode: Any) -> dict:
+    """An episode with stocks and a written post: that post, with ONE picture — the
+    chart of the stock it leads with, marked on the air date.
+
+    This replaced the carousel. On 2026-09-23..10-27 the carousel (the episode's Marp
+    deck) had a median of 698 views over 63 posts; single-chart shapes had 1,300-1,500.
+    In the feed a carousel is a row of thumbnails whose only legible line is each
+    slide's heading, and the headings are section labels (「停滯性通膨疑慮」), not
+    claims — the deck was built for the episode page, where it stays. No lead stock →
+    the text post (with its macro card when the episode has one)."""
+    draft = compose_text_post(episode)
+    ticker = lead_ticker(episode)
+    if ticker:
+        draft = {**draft, "image_url": stock_card_url(episode, ticker), "subject": ticker}
+    return draft
 
 
 def compose_text_post(episode: Any) -> dict:
@@ -421,8 +525,48 @@ def already_posted(episode_id: str) -> bool:
 
 
 def _record(episode_id: str, media_id: str, url: str, reply_ids: Optional[list[str]] = None,
-            fmt: str = "episode_single") -> None:
-    social_ledger.record(PLATFORM, episode_id, media_id, url, reply_ids, fmt=fmt)
+            fmt: str = "episode_single", subject: Optional[str] = None, text: Optional[str] = None) -> None:
+    # The text is kept at publish time because the repeat check reads it for the NEXT
+    # slot; the provider copy only arrives with the daily insights sync.
+    social_ledger.record(PLATFORM, episode_id, media_id, url, reply_ids, fmt=fmt, subject=subject,
+                         post_snapshot={"text": text} if text else None)
+
+
+def recent_post_texts(days: int = 3) -> list[str]:
+    """What the account said lately, newest first — the context of the repeat check.
+    Market-move flashes are left out: they are one-line facts, and the check was
+    validated on stories only."""
+    out = []
+    try:
+        rows = social_ledger.list_posted(PLATFORM, limit=60, days=days)
+    except Exception:  # noqa: BLE001 — no context means nothing is held back, not no post
+        logger.exception("recent post texts unavailable")
+        return []
+    for row in rows:
+        if row.get("format") == "market_move_intraday":
+            continue
+        text = (row.get("post_snapshot") or {}).get("text") or (row.get("provider_snapshot") or {}).get("text")
+        if isinstance(text, str) and text.strip():
+            out.append(text)
+    return out
+
+
+async def _post_single(service: ThreadsService, episode: Any, episode_id: str, draft: dict,
+                       fmt: str, kind: str) -> tuple[Optional[dict], Optional[dict]]:
+    """One post with at most one image, the link in the first reply. Returns
+    ``(posted_item, None)`` or ``(None, skipped_item)``."""
+    if not social_ledger.claim(PLATFORM, episode_id):
+        return None, {"episode_id": episode_id, "reason": "already_posted"}
+    try:
+        media_id = await service.publish(draft["text"], image_url=draft.get("image_url"))
+        reply_id = await service.publish_reply(episode_link_comment(episode, fmt), reply_to_id=media_id)
+        _record(episode_id, media_id, draft["url"], [reply_id], fmt=fmt,
+                subject=draft.get("subject"), text=draft["text"])
+    except ThreadsError as e:
+        social_ledger.release(PLATFORM, episode_id)
+        return None, {"episode_id": episode_id, "reason": f"publish_failed: {e}"}
+    logger.info("Posted %s for %s (%s)", fmt, episode_id, media_id)
+    return {**draft, "kind": kind, "media_id": media_id, "dry_run": False}, None
 
 
 def list_posted(limit: int = 50, days: Optional[int] = None) -> list[dict]:
@@ -522,19 +666,29 @@ async def publish_recent(
     episodes = await podcast_service.get_recent_episodes(limit=limit, enrich_content=False)
 
     ranking: list[dict] = []
+    held: set[str] = set()
     if max_posts is not None and settings.social_slot_ranker_model:
         eligible: dict[str, Any] = {}
         for episode in episodes:
             episode_id = _field(episode, "id") or _field(episode, "episode_id") or ""
             if episode_id and _skip_reason(episode, episode_id, cutoff_ms) is None:
                 eligible[episode_id] = episode
+        texts = {}
+        for episode_id, episode in eligible.items():
+            thread = _field(episode, "social_thread") or {}
+            text = thread.get("post") if isinstance(thread, dict) else None
+            if isinstance(text, str) and text.strip():
+                texts[episode_id] = text
+        # Five shows retelling the week's one story is five posts the reader skips
+        # (17 of 30 in 10-16..10-26). A held episode stays unrecorded: a later slot may
+        # take it once the story has cooled, or it ages out of the window.
+        if texts and settings.openrouter_api_key:
+            held = await social_ranker.repeats_recent(texts, await asyncio.to_thread(recent_post_texts))
+            if held:
+                logger.warning("Threads slot holds back repeated stories: %s", ", ".join(sorted(held)))
+                eligible = {k: v for k, v in eligible.items() if k not in held}
+                texts = {k: v for k, v in texts.items() if k not in held}
         if len(eligible) > max_posts:
-            texts = {}
-            for episode_id, episode in eligible.items():
-                thread = _field(episode, "social_thread") or {}
-                text = thread.get("post") if isinstance(thread, dict) else None
-                if isinstance(text, str) and text.strip():
-                    texts[episode_id] = text
             scores = await social_ranker.score_posts(texts)
             if scores:
                 episodes = sorted(episodes, key=lambda ep: scores.get(
@@ -556,7 +710,8 @@ async def publish_recent(
         episode_id = _field(episode, "id") or _field(episode, "episode_id") or ""
         if not episode_id:
             continue
-        reason = _skip_reason(episode, episode_id, cutoff_ms)
+        reason = _skip_reason(episode, episode_id, cutoff_ms) or (
+            "repeats_recent_story" if episode_id in held else None)
         if reason:
             skipped.append({"episode_id": episode_id, "reason": reason})
             continue
@@ -574,19 +729,9 @@ async def publish_recent(
             if effective_dry_run:
                 posted.append({**draft, "kind": "text", "dry_run": True})
                 continue
-            if not social_ledger.claim(PLATFORM, episode_id):
-                skipped.append({"episode_id": episode_id, "reason": "already_posted"})
-                continue
-            try:
-                fmt = "episode_macro_card" if draft.get("image_url") else "episode_text"
-                media_id = await service.publish(draft["text"], image_url=draft.get("image_url"))
-                reply_id = await service.publish_reply(episode_link_comment(episode, fmt), reply_to_id=media_id)
-                _record(episode_id, media_id, draft["url"], [reply_id], fmt=fmt)
-                posted.append({**draft, "kind": "text", "media_id": media_id, "dry_run": False})
-                logger.info("Posted text post for %s (%s)", episode_id, media_id)
-            except ThreadsError as e:
-                social_ledger.release(PLATFORM, episode_id)
-                skipped.append({"episode_id": episode_id, "reason": f"publish_failed: {e}"})
+            fmt = "episode_macro_card" if draft.get("image_url") else "episode_text"
+            item, skip = await _post_single(service, episode, episode_id, draft, fmt, "text")
+            (posted if item else skipped).append(item or skip)
             continue
 
         # One or two stocks → the story of the call on its marked chart. The story comes
@@ -609,18 +754,31 @@ async def publish_recent(
                     hook = f'{speaker_for(frame["podcaster"])}這集講{frame["name"]}的整段'
                     reply_id = await service.publish_reply(
                         link_comment(episode_id, "episode_ticker_story", hook=hook), reply_to_id=media_id)
-                    _record(episode_id, media_id, frame["url"], [reply_id], fmt="episode_ticker_story")
+                    _record(episode_id, media_id, frame["url"], [reply_id], fmt="episode_ticker_story",
+                            subject=frame["ticker"], text=story)
                     posted.append({**frame, "kind": "ticker_story", "text": story, "media_id": media_id, "dry_run": False})
                     logger.info("Posted ticker story for %s (%s, %s)", episode_id, frame["ticker"], media_id)
                 except ThreadsError as e:
                     social_ledger.release(PLATFORM, episode_id)
                     skipped.append({"episode_id": episode_id, "reason": f"publish_failed: {e}"})
                 continue
-            logger.info("no ticker story for %s (%s) — carousel instead", episode_id, frame["ticker"])
+            logger.info("no ticker story for %s (%s) — the written post instead", episode_id, frame["ticker"])
 
-        # Use the full thread (carousel + reply chain) when the episode has rendered
-        # cards OR hand-authored social copy; otherwise fall back to a single text/image
-        # post (legacy episodes with neither).
+        # Stocks and a written post → the post with one chart (compose_chart_post).
+        if poll is None and _written_post(episode):
+            draft = await asyncio.to_thread(compose_chart_post, episode)
+            kind = "chart" if draft.get("subject") else "text"
+            if effective_dry_run:
+                posted.append({**draft, "kind": kind, "dry_run": True})
+                continue
+            fmt = ("episode_chart" if draft.get("subject")
+                   else "episode_macro_card" if draft.get("image_url") else "episode_text")
+            item, skip = await _post_single(service, episode, episode_id, draft, fmt, kind)
+            (posted if item else skipped).append(item or skip)
+            continue
+
+        # Polls, and legacy episodes with cards but no written post: the full thread
+        # (carousel + reply chain); with neither, a single text/image post.
         if has_cards or _has_human_thread(episode):
             thread = compose_thread(episode)
             if _cards_not_rendered(episode, thread):
@@ -650,7 +808,8 @@ async def publish_recent(
                     except Exception:
                         logger.exception("poll posted but tracking failed for %s", episode_id)
                 else:
-                    _record(episode_id, res["root_media_id"], thread["url"], res["reply_ids"], fmt="episode_thread")
+                    _record(episode_id, res["root_media_id"], thread["url"], res["reply_ids"], fmt="episode_thread",
+                            text=thread["main_text"])
                 posted.append({"episode_id": episode_id, "url": thread["url"], "dry_run": False, **res})
                 logger.info("Posted thread for %s (root=%s, %d replies)",
                             episode_id, res["root_media_id"], res["reply_count"])
@@ -745,7 +904,8 @@ async def publish_episode(episode: Any, dry_run: bool = True) -> dict:
             except Exception:
                 logger.exception("poll posted but tracking failed for %s", episode_id)
         else:
-            _record(episode_id, res["root_media_id"], thread["url"], res["reply_ids"], fmt="episode_thread")
+            _record(episode_id, res["root_media_id"], thread["url"], res["reply_ids"], fmt="episode_thread",
+                    text=thread["main_text"])
         logger.info("Posted thread for %s (root=%s, %d replies)", episode_id, res["root_media_id"], res["reply_count"])
         return {**base, "posted": True, "url": thread["url"], **res}
 

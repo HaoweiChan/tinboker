@@ -101,3 +101,15 @@ def test_every_glyph_on_the_card_is_one_a_cjk_font_actually_has():
         and not (0xFF00 <= ord(ch) <= 0xFFEF)
     }
     assert not exotic, f"glyphs a CJK face may lack: {sorted(exotic)}"
+
+
+def test_a_long_provider_name_stops_short_of_the_brand_mark():
+    """Massive's legal names ran through 「TinBoker 聽播客」 on the same baseline."""
+    from src.services.card_theme import MARGIN, SIZE, advance
+    svg = stock_card_svg(_stock(ticker="META", name="Meta Platforms, Inc. Class A Common Stock"), [], days=60)
+    header = re.search(r'font-size="44" font-weight="700">([^<]*) <tspan', svg).group(1)
+    assert header.endswith("…") and header.startswith("Meta Platforms")
+    brand_left = SIZE - MARGIN - advance("TinBoker 聽播客", 26)
+    assert MARGIN + advance(f"{header} META", 44) < brand_left
+    # A name that fits is left alone.
+    assert '>台積電 <tspan' in stock_card_svg(_stock(), [], days=60)

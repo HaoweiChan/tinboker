@@ -46,6 +46,19 @@ def advance(text: str, px: float) -> float:
     return sum(px if ord(c) > 0x2E80 else px * 0.6 for c in text)
 
 
+def fit(text: str, px: float, width: float) -> str:
+    """Last-resort trim, so a pathological 58-character name degrades instead of
+    overrunning the card."""
+    if advance(text, px) <= width:
+        return text
+    out = ""
+    for ch in text:
+        if advance(out + ch, px) > width - advance("…", px):
+            break
+        out += ch
+    return out.rstrip() + "…"
+
+
 def fmt(v: float) -> str:
     """Money as people write it: no decimals when there are none to show."""
     return f"{v:,.0f}" if float(v).is_integer() else f"{v:,.2f}"
