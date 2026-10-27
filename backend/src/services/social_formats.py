@@ -410,5 +410,5 @@ async def _publish(fmt: Format, draft: dict, dry_run: bool) -> dict:
         social_ledger.release(PLATFORM, draft["key"])
         return {**base, "posted": False, "reason": f"publish_failed: {e}"}
     social_ledger.record(PLATFORM, draft["key"], media_id, draft.get("url") or "", reply_ids,
-                         fmt=fmt.id, subject=draft.get("subject"))
+                         fmt=fmt.id, subject=draft.get("subject"), post_snapshot={"text": draft["text"]})
     return {**base, "posted": True, "media_id": media_id}

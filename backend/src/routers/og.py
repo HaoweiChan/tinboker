@@ -183,6 +183,21 @@ def _daily_mentions(ticker: str, since: str, allowed: Optional[frozenset]) -> li
     return []
 
 
+def _card_name(ticker: str) -> Optional[str]:
+    """The name the site uses (輝達, SpaceX), not the provider's legal name. Only the zh
+    name or a word-like alias: ``name_en`` is not trusted here (CRWV's reads
+    "CrowdStrike (variant)"), so without either the provider name stays, fitted to the
+    header. Sync, like ``_daily_mentions``."""
+    for db in get_session():
+        row = db.query(StockTranslation.name_zh_tw, StockTranslation.aliases) \
+            .filter(StockTranslation.ticker == ticker).first()
+        if not row:
+            return None
+        zh, aliases = row
+        return short_name(zh, None, aliases) or None
+    return None
+
+
 @router.get("/stock/{ticker}.png")
 async def stock_card_raster(
     # Constrained here rather than downstream: this value is interpolated into a
@@ -211,8 +226,10 @@ async def stock_card_raster(
     # count the same shows the stock page does, not every row in the store.
     allowed = await podcast_service._allowed_podcast_names()
     mentions = await asyncio.to_thread(_daily_mentions, ticker, since, allowed)
+    detail = stock.model_dump()
+    detail["name"] = await asyncio.to_thread(_card_name, ticker) or detail.get("name")
 
-    svg = stock_card_svg(stock.model_dump(), mentions, days,
+    svg = stock_card_svg(detail, mentions, days,
                          event={"date": event, "label": label} if event else None)
     try:
         png = await asyncio.to_thread(svg_to_png, svg, CARD_SIZE, CARD_SIZE)
