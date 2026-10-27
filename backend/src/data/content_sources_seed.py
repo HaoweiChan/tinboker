@@ -140,6 +140,9 @@ PODCAST_SOURCES: list[dict] = [
     {
         "source_type": "podcast", "language": "en",
         "name": "CNBC's Fast Money",
+        # On the site, not on social: its Threads posts had a median of 382 views
+        # (2026-09-23..10-27), the account's lowest — a US desk show for a TW audience.
+        "social_enabled": False,
         "feed_url": "https://podcasttomp3.com/podcasts/v2/385199",
         "spotify_url": "https://open.spotify.com/show/6bdGOAWb664x8wXfoiwFTV",
         "lookback_days": 30, "active": True,
