@@ -91,10 +91,11 @@ class WebSocketSubscriber:
         try:
             while self._listening and self.pubsub:
                 try:
-                    # Get message from Redis (with timeout to allow checking _listening flag)
-                    message = await asyncio.wait_for(
-                        self.pubsub.get_message(ignore_subscribe_messages=True),
-                        timeout=1.0
+                    # get_message blocks up to `timeout`, so the loop re-checks _listening once a
+                    # second. Its default timeout is 0 (return None at once), which turned this
+                    # into a busy loop pinning prod's event loop at 100% CPU per subscriber.
+                    message = await self.pubsub.get_message(
+                        ignore_subscribe_messages=True, timeout=1.0
                     )
 
                     if message and message['type'] == 'message':
@@ -108,9 +109,6 @@ class WebSocketSubscriber:
                             logger.error(f"Error sending WebSocket message: {e}")
                             break  # Exit loop on WebSocket error
 
-                except asyncio.TimeoutError:
-                    # Timeout is expected - continue loop
-                    continue
                 except Exception as e:
                     logger.error(f"Error in listen loop: {e}")
                     await asyncio.sleep(1)
