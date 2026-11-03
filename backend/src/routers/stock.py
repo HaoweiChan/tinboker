@@ -2,6 +2,7 @@
 Stock API router
 """
 import json
+import math
 import asyncio
 import hashlib
 import logging
@@ -180,7 +181,12 @@ async def get_batch_prices(
         return None
 
     results = await asyncio.gather(*[_change(t) for t in ticker_list])
-    return {ticker: pct for ticker, pct in zip(ticker_list, results)}
+    return {ticker: _finite(pct) for ticker, pct in zip(ticker_list, results)}
+
+
+def _finite(v: Optional[float]) -> Optional[float]:
+    """None for NaN/inf: Starlette's JSONResponse refuses them and the whole batch 500s."""
+    return v if not isinstance(v, float) or math.isfinite(v) else None
 
 
 class TickerDatePair(BaseModel):
@@ -375,7 +381,7 @@ async def get_batch_prices_since(
     for ticker, ref_close in zip(tickers, ref_closes):
         current_price = latest[ticker][-1][1] if latest.get(ticker) else None
         if ref_close and current_price and ref_close > 0:
-            out[ticker] = round((current_price - ref_close) / ref_close * 100, 2)
+            out[ticker] = _finite(round((current_price - ref_close) / ref_close * 100, 2))
         else:
             out[ticker] = None
 
