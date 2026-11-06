@@ -26,7 +26,8 @@ Three lanes per market, same rules, separate budgets, tried in this order:
     the largest US names, researched 2026-10), at most ``MARKET_MOVE_MAX_STOCK_POSTS``
     per market per day, each once (``market_move:stock:{market}:{date}:{id}``). A stock
     also needs ``MARKET_MOVE_STOCK_MIN_PCT`` — a 1% TSMC morning is not news;
-  * theme  — TinBoker's theme registry (tag_registry sector rows, exposure_type theme):
+  * theme  — TinBoker's theme registry (tag_registry sector rows, exposure_type theme)
+    plus curated US baskets (src.data.us_themes):
     each theme's members in this market form a basket; at most
     ``MARKET_MOVE_MAX_THEME_POSTS`` per market per day
     (``market_move:theme:{market}:{date}:{exposure_id}``). Scanned every
@@ -53,6 +54,7 @@ from zoneinfo import ZoneInfo
 import httpx
 
 from src.config import settings
+from src.data.us_themes import US_THEMES
 from src.services import market_news, social_ledger, yahoo_chart
 from src.services.threads_service import ThreadsError, ThreadsService
 from src.services.yahoo_chart import Intraday, Quote, YahooChartError
@@ -431,7 +433,7 @@ async def find_cause(market: Market, subject: Subject, now: datetime) -> dict:
             "sources": sources if tier != "none" else []}
 
 
-# ── themes from the registry ────────────────────────────────────────────────
+# ── themes from the registry and curated US baskets ─────────────────────────
 
 def _tw_suffixes(tickers: list[str]) -> dict[str, str]:
     """``{2330: '.TW', 6488: '.TWO'}`` from the warmed TWSE/TPEx bars — Yahoo needs the
@@ -456,9 +458,22 @@ def _tw_suffixes(tickers: list[str]) -> dict[str, str]:
 
 
 def _load_baskets() -> dict[str, list[Basket]]:
-    """``{TW: [...], US: [...]}`` — every visible theme's members, split by market."""
+    """Visible registry themes plus curated US baskets; registry IDs take priority."""
+    from src.database.models import StockTranslation
+    from src.database.postgres import get_session
     from src.services.podcast import PodcastService
     from src.utils.market import infer_market
+
+    names = {}
+    try:
+        for db in get_session():
+            for row in db.query(StockTranslation).filter(StockTranslation.market == "US").all():
+                if row.translation_status == "approved" and (row.name_zh_tw or "").strip():
+                    names[row.ticker] = row.name_zh_tw.strip()
+    except Exception:  # noqa: BLE001 — optional labels must not prevent a theme scan
+        names = {}
+        logger.warning("US theme translation lookup failed; using registry names or tickers")
+
     idx = PodcastService._sector_membership_index()
     meta, members = idx.get("meta", {}), idx.get("members", {})
     themes = {eid: m for eid, m in members.items() if (meta.get(eid) or {}).get("exposure_type") == "theme"}
@@ -473,10 +488,14 @@ def _load_baskets() -> dict[str, list[Basket]]:
             if mk == "TW":
                 by_market["TW"].append(Instrument(f"{t}{suffix.get(t, '.TW')}", m.get("name") or t))
             elif mk == "US":
-                by_market["US"].append(Instrument(t, m.get("name") or t))
+                by_market["US"].append(Instrument(t, m.get("name") or names.get(t) or t))
         for mk, insts in by_market.items():
             if len(insts) >= THEME_MIN_MEMBERS:
                 out[mk].append(Basket(eid, name, insts))
+    for theme in US_THEMES:
+        if theme["exposure_id"] not in meta:
+            out["US"].append(Basket(theme["exposure_id"], theme["name"],
+                                    [Instrument(t, names.get(t) or t) for t in theme["members"]]))
     return out
 
 
