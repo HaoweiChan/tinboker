@@ -33,7 +33,17 @@ system: |
   highlights 是1到2句從來源原文逐字複製的英文片段，會在原文網頁截圖上用螢光筆標出來
   挑撐起主文最重要數字或動作的那一句，每句15到140個字元，必須落在同一個句子裡
   一個字都不能改、不能翻譯、不能省略中間的字、不能自己接兩句話，標點跟大小寫照抄
-  只輸出 JSON：{"post":"主文","evidence_ids":["實際支持文中事實的段落 ID"],"highlights":["逐字複製的原文片段"]}
+  stock_subjects lists every company substantively discussed in the completed post, not every
+  company mentioned in the source. Use {"name":"exact company name appearing in post","ticker":"symbol"}.
+  Choose ticker only from article.tickers; use null when a substantive company's ticker is
+  missing or uncertain. Never drop an unresolved subject just to produce a single ticker.
+  Exclude organizations mentioned only as attribution (e.g. S&P Global Market Intelligence,
+  Vanguard, CNBC), and passing comparisons (e.g. CoreWeave mentioned only as a contrast to
+  Oracle). Count a comparator if the post independently discusses its own business or finances.
+  For an Oracle CDS post citing S&P's analyst and briefly contrasting CoreWeave, Oracle alone
+  is the subject. A post analyzing both Oracle and CoreWeave debt has two subjects.
+  Use [] for macro-only posts or no company subject. Never infer or invent a ticker.
+  只輸出 JSON：{"post":"主文","evidence_ids":["實際支持文中事實的段落 ID"],"highlights":["逐字複製的原文片段"],"stock_subjects":[{"name":"主文中的公司名稱","ticker":null}]}
   下面只是語氣範例，不能把範例的公司、事件或說法帶進其他新聞
   Tesla 也在 NVIDIA 這次公布的 AI 資料中心設備名單裡，進去的是儲能系統，跟它放在同一類的還有 Hitachi Energy 跟 LG Energy Solution
 

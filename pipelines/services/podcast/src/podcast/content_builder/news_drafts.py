@@ -12,6 +12,7 @@ from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import yaml
+from shared.tickers import lookup_ticker
 
 JEV_MODEL = "typesafe/jev-1.13"
 THREADS_MAX_CHARS = 500  # Threads rejects a longer text post
@@ -210,7 +211,8 @@ def evidence_ids(draft: dict, article: dict) -> list[str]:
 
 def validate_draft(result: dict, article: dict) -> str:
     draft = result["draft"]
-    if (not isinstance(draft, dict) or set(draft) != {"post", "evidence_ids", "highlights"}
+    if (not isinstance(draft, dict) or set(draft) not in ({"post", "evidence_ids", "highlights"},
+                                  {"post", "evidence_ids", "highlights", "stock_subjects"})
             or not isinstance(draft["post"], str) or not draft["post"].strip()
             or not isinstance(draft["evidence_ids"], list)):
         raise ValueError("Writer returned an invalid draft or evidence ID")
@@ -232,6 +234,30 @@ def validate_draft(result: dict, article: dict) -> str:
     if re.search(r"(?<!自)我|(?<!迷)你|https?://|值得關注|滿值得往下追|還需觀察", post):
         raise ValueError("Writer returned disallowed prose")
     return post
+
+
+def single_stock_ticker(draft: dict, article: dict) -> str | None:
+    """Only a grounded, unambiguous subject of the completed post gets a chart."""
+    subjects = draft.get("stock_subjects")
+    if not isinstance(subjects, list) or len(subjects) != 1:
+        return None
+    subject = subjects[0]
+    if not isinstance(subject, dict):
+        return None
+    ticker, name = subject.get("ticker"), subject.get("name")
+    candidates = article.get("tickers")
+    if (not isinstance(ticker, str) or not re.fullmatch(r"[A-Z0-9.\-]{1,20}", ticker)
+            or not isinstance(candidates, list) or ticker not in candidates
+            or not isinstance(name, str) or not name.strip()
+            or name.casefold() not in draft["post"].casefold()):
+        return None
+    info = lookup_ticker(ticker)
+    if not info or info.type not in {"company", "adr", "reit"}:
+        return None
+    names = {info.symbol, info.name, info.name_en, *info.aliases}
+    if name.casefold() not in {alias.casefold() for alias in names if alias}:
+        return None
+    return ticker
 
 
 def run(data: dict, out: Path, *, as_of: datetime, select_with_jev: bool = False,
@@ -308,7 +334,7 @@ def run(data: dict, out: Path, *, as_of: datetime, select_with_jev: bool = False
                 raise ValueError("Requested article did not pass the prefilter")
         if selected:
             prompt = yaml.safe_load((Path(__file__).parent / "prompts/news_social_writer.yaml").read_text())
-            payload = {"model": writer_model, "max_tokens": 2048, "prompt_version": 5,
+            payload = {"model": writer_model, "max_tokens": 2048, "prompt_version": 6,
                        "messages": [{"role": "system", "content": prompt["system"]},
                                     {"role": "user", "content": json.dumps(
                                         {"run_as_of": as_of.isoformat(), "article": selected},
@@ -325,6 +351,7 @@ def run(data: dict, out: Path, *, as_of: datetime, select_with_jev: bool = False
                         raise
             screenshot = selected.get("screenshot_path")
             report["draft"] = {"article_id": selected["id"], "post": post,
+                               "chart_ticker": single_stock_ticker(result["draft"], selected),
                                "evidence_ids": evidence_ids(result["draft"], selected),
                                "highlights": source_quotes(result["draft"], selected),
                                "first_comment": selected["url"], "screenshot_path": screenshot,

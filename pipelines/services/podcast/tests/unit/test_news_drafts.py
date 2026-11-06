@@ -86,7 +86,7 @@ def test_english_source_cache_and_separate_comment(tmp_path, monkeypatch):
         assert result["draft"]["highlights"] == [" ".join(quote.split())]
         assert result["draft"]["post"] == "新設備在9月開始交貨\n\n客戶已經用上3套"
     assert selector.call_count == writer.call_count == 1
-    assert writer.call_args.args[0]["prompt_version"] == 5
+    assert writer.call_args.args[0]["prompt_version"] == 6
     sent_state = json.loads(selector.call_args.args[0]["state"])
     assert sent_state == {"title": source["title"], "paragraphs": source["paragraphs"]}
     assert os.environ["SOCIAL_COPY_WRITER_MODEL"] == "original-model"
@@ -312,3 +312,63 @@ def test_evidence_comes_from_the_quotes_not_the_writers_numbering():
     assert drafts.evidence_ids(draft, source) == ["1"]          # invented IDs ignored
     assert drafts.validate_draft({"draft": draft}, source) == "客戶開始用新產品"
     assert drafts.evidence_ids(draft | {"evidence_ids": ["0"]}, source) == ["0", "1"]  # a real ID is kept
+
+
+@pytest.mark.parametrize("subjects,tickers,expected", [
+    ([{"name": "Oracle", "ticker": "ORCL"}], ["ORCL", "SPGI", "CRWV"], "ORCL"),
+    ([], ["ORCL"], None),
+    (None, ["ORCL"], None),
+    ([{"name": "Oracle", "ticker": "ORCL"}, {"name": "CoreWeave", "ticker": "CRWV"}], ["ORCL", "CRWV"], None),
+    ([{"name": "Oracle", "ticker": "ORCL"}, {"name": "CoreWeave", "ticker": None}], ["ORCL"], None),
+    ([{"name": "Oracle", "ticker": None}], ["ORCL"], None),
+    ([{"name": "Oracle", "ticker": "SPGI"}], ["ORCL", "SPGI", "CRWV"], None),
+    ([{"name": "Oracle", "ticker": "MADEUP"}], ["ORCL"], None),
+    ([{"name": "absent company", "ticker": "ORCL"}], ["ORCL"], None),
+    ([{"name": "Oracle", "ticker": "../ORCL"}], ["../ORCL"], None),
+    ([{"name": "Oracle", "ticker": "ORCL"}], [], None),
+    (["ORCL"], ["ORCL"], None),
+])
+def test_chart_requires_one_grounded_post_subject(subjects, tickers, expected):
+    source = article() | {"tickers": tickers}
+    draft = {"post": "Oracle 的 CDS 上升，S&P Global 的分析師說接近高收益債，與 CoreWeave 相比仍低",
+             "stock_subjects": subjects}
+    assert drafts.single_stock_ticker(draft, source) == expected
+
+
+def test_writer_subject_metadata_reaches_report_without_extra_calls(tmp_path, monkeypatch):
+    source = article() | {"tickers": ["ORCL", "SPGI", "CRWV"]}
+    writer = Mock(return_value={"draft": {
+        "post": "Oracle 的信用風險升高，S&P 的分析師提出觀察", "evidence_ids": ["0"],
+        "highlights": [source["paragraphs"][0]["text"][:40]],
+        "stock_subjects": [{"name": "Oracle", "ticker": "ORCL"}],
+    }})
+    monkeypatch.setattr(drafts, "write", writer)
+    report = drafts.run({"articles": [source]}, tmp_path, as_of=NOW, article_id="a")
+    assert report["draft"]["chart_ticker"] == "ORCL"
+    assert writer.call_count == 1
+    prompt = writer.call_args.args[0]["messages"][0]["content"]
+    assert "Exclude organizations mentioned only as attribution" in prompt
+    assert "Count a comparator if" in prompt
+
+
+def test_chart_rejects_wrong_registered_company_binding(monkeypatch):
+    from shared.tickers import TickerInfo
+    monkeypatch.setattr(drafts, "lookup_ticker", lambda _: TickerInfo(
+        symbol="SPGI", name="標普全球", name_en="S&P Global", market="US", sector="", type="company"))
+    draft = {"post": "Oracle 的 CDS 上升，S&P Global 分析師說接近高收益債", "stock_subjects": [{"name": "Oracle", "ticker": "SPGI"}]}
+    assert drafts.single_stock_ticker(draft, {"tickers": ["ORCL", "SPGI", "CRWV"]}) is None
+
+
+def test_chart_accepts_curated_alias_and_rejects_non_stock(monkeypatch):
+    from shared.tickers import TickerInfo
+    draft = {"post": "甲骨文的信用風險上升", "stock_subjects": [{"name": "甲骨文", "ticker": "ORCL"}]}
+    for kind, expected in [("company", "ORCL"), ("index", None)]:
+        monkeypatch.setattr(drafts, "lookup_ticker", lambda _, kind=kind: TickerInfo(
+            symbol="ORCL", name="Oracle", name_en="Oracle", market="US", sector="", type=kind, aliases=("甲骨文",)))
+        assert drafts.single_stock_ticker(draft, {"tickers": ["ORCL"]}) == expected
+
+
+def test_chart_skips_unknown_registry_metadata(monkeypatch):
+    monkeypatch.setattr(drafts, "lookup_ticker", lambda _: None)
+    draft = {"post": "Oracle 的信用風險上升", "stock_subjects": [{"name": "Oracle", "ticker": "ORCL"}]}
+    assert drafts.single_stock_ticker(draft, {"tickers": ["ORCL"]}) is None

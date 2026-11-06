@@ -113,3 +113,56 @@ def test_failed_screenshot_means_no_draft(lane, monkeypatch):
         drafts.stage_news_draft(repo, entries)
     assert writer.call_count == 1
     assert request.call_count == 1  # state only; nothing handed off
+
+
+@pytest.mark.parametrize("available", [True, False])
+def test_single_stock_chart_handoff_preserves_screenshot(lane, monkeypatch, available):
+    repo, entries, _, request, _, writer, page = lane
+    page.frontmatter["tickers"] = ["ORCL", "SPGI", "CRWV"]
+    writer.return_value["draft"].update(post="Oracle 的信用風險上升", stock_subjects=[{"name": "Oracle", "ticker": "ORCL"}])
+    chart_bytes = b"\x89PNG\r\n\x1a\nchart"
+    chart = Mock(return_value=chart_bytes if available else None)
+    monkeypatch.setattr(drafts, "stock_chart", chart)
+    assert drafts.stage_news_draft(repo, entries) == {"status": "created"}
+    assert chart.call_args.args[0] == "ORCL"
+    payload = request.call_args.args[0]
+    assert base64.b64decode(payload["image_png_base64"]) == b"\x89PNG\r\n\x1a\nshot"
+    assert payload["chart_ticker"] == ("ORCL" if available else None)
+    assert payload["stock_chart_png_base64"] == (base64.b64encode(chart_bytes).decode() if available else None)
+
+
+@pytest.mark.parametrize("subjects", [[], [{"name": "企業", "ticker": "ORCL"}, {"name": "企業", "ticker": "CRWV"}]])
+def test_zero_or_multiple_subjects_do_not_fetch_chart(lane, monkeypatch, subjects):
+    repo, entries, _, request, _, writer, page = lane
+    page.frontmatter["tickers"] = ["ORCL", "CRWV"]
+    writer.return_value["draft"]["stock_subjects"] = subjects
+    chart = Mock()
+    monkeypatch.setattr(drafts, "stock_chart", chart)
+    assert drafts.stage_news_draft(repo, entries) == {"status": "created"}
+    chart.assert_not_called()
+    assert request.call_args.args[0]["stock_chart_png_base64"] is None
+
+
+def test_chart_download_is_bounded_and_cached(monkeypatch, tmp_path):
+    from io import BytesIO
+    monkeypatch.setattr(drafts, "admin_base_url", lambda: "https://api.example")
+    image = b"\x89PNG\r\n\x1a\nchart"
+    response = BytesIO(image)
+    fetch = Mock(return_value=response)
+    monkeypatch.setattr(drafts.urllib.request, "urlopen", fetch)
+    cache = tmp_path / "chart.png"
+    assert drafts.stock_chart("ORCL", cache) == image
+    assert drafts.stock_chart("ORCL", cache) == image
+    assert fetch.call_count == 1
+    assert fetch.call_args.args[0].full_url.endswith("/api/og/stock/ORCL.png?days=90")
+    assert fetch.call_args.kwargs["timeout"] == 30
+
+
+@pytest.mark.parametrize("payload", [b"<html>error</html>", b"\x89PNG\r\n\x1a\n" + b"x" * 32, None])
+def test_chart_failure_or_invalid_image_is_optional(monkeypatch, tmp_path, payload):
+    from io import BytesIO
+    monkeypatch.setattr(drafts, "admin_base_url", lambda: "https://api.example")
+    monkeypatch.setattr(drafts, "MAX_IMAGE_BYTES", 16)
+    fetch = Mock(side_effect=TimeoutError()) if payload is None else Mock(return_value=BytesIO(payload))
+    monkeypatch.setattr(drafts.urllib.request, "urlopen", fetch)
+    assert drafts.stock_chart("ORCL", tmp_path / "chart.png") is None

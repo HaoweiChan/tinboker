@@ -194,3 +194,30 @@ def test_long_headline_is_no_longer_a_reason_to_skip(lane, headline):
     assert result["status"] == "created"
     with session_scope() as db:
         assert db.get(PromoDraft, result["id"]).text == request.text
+
+
+def test_stock_chart_is_second_durable_image_and_retries_do_not_duplicate(lane):
+    request = body().model_copy(update={"chart_ticker": "ORCL", "stock_chart_png_base64": base64.b64encode(PNG + b"chart").decode()})
+    lane.side_effect = ["https://media.example/screenshot.png", "https://media.example/chart.png"]
+    result = service.save_news_draft(request)
+    assert result["status"] == "created"
+    with session_scope() as db:
+        draft = db.get(PromoDraft, result["id"])
+        assert [m["path"] for m in draft.media] == ["https://media.example/screenshot.png", "https://media.example/chart.png"]
+        assert draft.media[1]["filename"].startswith("news-stock-ORCL-")
+        assert draft.text == request.text
+    assert service.save_news_draft(request) == {"status": "already_drafted"}
+    assert lane.call_count == 2
+
+
+@pytest.mark.parametrize("chart,failure", [("invalid base64", None), (base64.b64encode(PNG).decode(), OSError("full")), (base64.b64encode(PNG).decode(), None)])
+def test_optional_chart_failure_preserves_screenshot_draft(lane, chart, failure):
+    lane.side_effect = ["https://media.example/screenshot.png", failure]
+    request = body().model_copy(update={"chart_ticker": "ORCL", "stock_chart_png_base64": chart})
+    result = service.save_news_draft(request)
+    assert result["status"] == "created"
+    with session_scope() as db:
+        draft = db.get(PromoDraft, result["id"])
+        assert len(draft.media) == 1
+        assert draft.media[0]["path"] == "https://media.example/screenshot.png"
+        assert db.query(UserNotification).count() == 1
