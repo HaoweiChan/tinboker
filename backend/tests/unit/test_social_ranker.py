@@ -103,3 +103,35 @@ async def test_score_posts_memo_uses_text_and_model(client, monkeypatch):
     monkeypatch.setattr(settings, "social_slot_ranker_model", "other-model")
     assert await social_ranker.score_posts({"b": "Same post"}) == {"b": 0.82}
     http.post.assert_awaited_once()
+
+
+def _repeat_response(p):
+    return httpx.Response(
+        200, text=json.dumps({"answers": {"same_story": {"type": "noul", "noul": p}}}),
+        request=httpx.Request("POST", "https://openrouter.ai/api/alpha/decisions"),
+    )
+
+
+@pytest.mark.asyncio
+async def test_repeats_recent_holds_back_only_scores_at_the_threshold(client):
+    _, http = client
+    http.post.side_effect = [_repeat_response(0.95), _repeat_response(0.62)]
+    recent = ["CoreWeave 債券殖利率被賣到15%\n⬇️ 4 個重點整理", "南亞衝過300元"]
+    held = await social_ranker.repeats_recent({"again": "Coreweave 營收翻倍但利息吃掉四分之一", "new": "台光電 CCL 缺到2030"}, recent)
+    assert held == {"again"}
+    state = http.post.await_args_list[0].kwargs["json"]["state"]
+    # Recent posts first, newest first, the carousel tail dropped; then the candidate.
+    assert state == ("RECENT POSTS:\nCoreWeave 債券殖利率被賣到15%\n---\n南亞衝過300元"
+                     "\n\nCANDIDATE POST:\nCoreweave 營收翻倍但利息吃掉四分之一")
+    assert http.post.await_args_list[0].kwargs["json"]["questions"] == social_ranker.REPEAT_QUESTION
+
+
+@pytest.mark.asyncio
+async def test_repeats_recent_fails_open(client, monkeypatch):
+    _, http = client
+    assert await social_ranker.repeats_recent({"a": "x"}, []) == set()      # nothing posted lately
+    http.post.assert_not_called()
+    http.post.side_effect = [httpx.ReadTimeout("slow")]
+    assert await social_ranker.repeats_recent({"a": "x"}, ["y"]) == set()   # provider down
+    monkeypatch.setattr(settings, "openrouter_api_key", "")
+    assert await social_ranker.repeats_recent({"a": "x"}, ["y"]) == set()   # no key

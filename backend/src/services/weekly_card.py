@@ -25,6 +25,7 @@ from xml.sax.saxutils import escape
 
 from src.services.card_theme import (
     AMBER, BG, BORDER, DOWN, FAINT, INK, LABEL, MARGIN, SIZE, UP, advance, card_font,
+    fit as _fit,
 )
 
 logger = logging.getLogger(__name__)
@@ -70,19 +71,6 @@ def short_name(name_zh: str | None, name_en: str | None, aliases: list | None) -
         if alt and any(c.islower() for c in alt) and (not best or len(alt) < len(best)):
             best = alt
     return best
-
-
-def _fit(text: str, px: float, width: float) -> str:
-    """Last-resort trim, so a pathological 58-character name degrades instead of
-    overrunning. With ``short_name`` in front of it this should not normally fire."""
-    if advance(text, px) <= width:
-        return text
-    out = ""
-    for ch in text:
-        if advance(out + ch, px) > width - advance("…", px):
-            break
-        out += ch
-    return out.rstrip() + "…"
 
 
 def movers_card_svg(data: dict) -> str:
