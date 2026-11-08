@@ -25,7 +25,7 @@
 import { ABOUT, TERMS, METHODOLOGY } from '../shared/sitePages.js';
 import { CROSS_SHOW_LOCKED, crossShowLead, stanceZh } from '../shared/crossShow.js';
 
-const CRAWLER = /bot|crawl|spider|mediapartners|facebookexternalhit|facebot|twitterbot|\bline\b|slackbot|whatsapp|telegrambot|discordbot|pinterest|linkedinbot|redditbot|embedly|quora|skypeuripreview|applebot|googlebot|bingbot|baiduspider|yandex|duckduckbot/i;
+const CRAWLER = /bot|crawl|spider|mediapartners|facebookexternalhit|facebot|twitterbot|\bline\b|slackbot|whatsapp|telegrambot|discordbot|pinterest|linkedinbot|redditbot|embedly|quora|skypeuripreview|applebot|googlebot|google-inspectiontool|googleother|bingbot|baiduspider|yandex|duckduckbot/i;
 
 // Podcast 觀點 from the last week are members-only on the page, so they are left out
 // of the crawler body too — serving Googlebot what a reader is asked to pay for is
