@@ -387,6 +387,10 @@ try {
     assert.equal(bot.status, 404, 'crawler gets a 404 for an out-of-window episode');
     assert.equal(bot.headers.get('x-robots-tag'), 'noindex, nofollow');
     assert.ok((await bot.text()).includes('id="root"'), 'the SPA body is still served');
+    // Search Console's "Test live URL" fetches as Google-InspectionTool; it must see what
+    // Googlebot sees, or the live test reports 200 for pages Googlebot gets as 404.
+    const inspect = await call('Mozilla/5.0 (Linux; Android 6.0.1; Nexus 5X Build/MMB29P) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Mobile Safari/537.36 (compatible; Google-InspectionTool/1.0;)');
+    assert.equal(inspect.status, 404, 'Search Console live test sees the crawler 404');
     const person = await call('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/140 Safari/537.36');
     assert.equal(person.status, 200, 'people are not given a 404 page by the edge');
 
