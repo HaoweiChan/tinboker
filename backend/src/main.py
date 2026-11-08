@@ -64,6 +64,9 @@ logging.basicConfig(
     level=getattr(logging, settings.log_level.strip().upper(), logging.WARNING),
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
 )
+# yfinance logs every unresolvable ticker at ERROR ("possibly delisted"); the US history
+# backfill retries ~170 dead tickers every 6h by design (~700 lines a day).
+logging.getLogger("yfinance").setLevel(logging.CRITICAL)
 
 
 @asynccontextmanager
