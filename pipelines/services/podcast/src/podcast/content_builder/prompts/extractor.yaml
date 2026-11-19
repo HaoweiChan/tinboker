@@ -35,6 +35,10 @@ system: |
   - Err on the side of more granular topics rather than combining multiple distinct topics
   - In a Q&A/來信 section, split it into ONE event PER question so each can be judged is_substantive independently
   - Never invent facts not present in the transcript
+  - Keep each numerical claim tied to its own conditions and time period. Do not calculate or
+    reconcile figures the speaker leaves unclear or contradictory; preserve that uncertainty.
+  - Preserve names as heard unless a correction is unambiguous from context. Never infer a company
+    name or ticker from an uncertain sound-alike; record it generically when identity is unclear.
   - section_topic must never include a listener's name, handle, or initials (e.g. "聽眾L的提問") even if the transcript names them — describe the qa topic generically instead (e.g. "聽眾提問：記憶體報價")
 
 user: |

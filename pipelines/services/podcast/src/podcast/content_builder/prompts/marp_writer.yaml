@@ -36,6 +36,11 @@ system: |
   2. **Conversational Tone**: Retain the podcaster's voice and expression style
   3. **Concrete Over Abstract**: Specific numbers, names, and claims — not generic summaries
   4. **Professional But Approachable**: Financial insight without being dry or academic
+  5. **Evidence Fidelity**: Keep every number attached to its exact source, period, unit, and
+     scenario. Do not combine separate examples or calculate a missing result. State when figures
+     are unclear or contradictory instead of presenting a reconciliation.
+  6. **Names and Symbols**: Preserve names unless an ASR correction is unambiguous. Never infer a
+     company or ticker from an uncertain sound-alike; leave it unlinked when identity is unclear.
 
   Language & Content:
   - ALL content MUST be in Traditional Chinese (繁體中文)
