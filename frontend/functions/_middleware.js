@@ -28,19 +28,6 @@ import { closeSentence, quoteLead, rangeSentence, stockDisplayName, stockTitle, 
 
 const CRAWLER = /bot|crawl|spider|mediapartners|facebookexternalhit|facebot|twitterbot|\bline\b|slackbot|whatsapp|telegrambot|discordbot|pinterest|linkedinbot|redditbot|embedly|quora|skypeuripreview|applebot|googlebot|google-inspectiontool|googleother|bingbot|baiduspider|yandex|duckduckbot/i;
 
-// Podcast 觀點 from the last week are members-only on the page, so they are left out
-// of the crawler body too — serving Googlebot what a reader is asked to pay for is
-// cloaking. Everything older stays free and indexable.
-// KEEP IN SYNC with src/lib/insightPaywall.ts (its check asserts this number).
-const INSIGHT_PAYWALL_DAYS = 7;
-const freeInsights = (rows) => {
-  const cutoff = Date.now() - INSIGHT_PAYWALL_DAYS * 86400e3;
-  return (rows || []).filter((i) => {
-    const t = Date.parse(i.podcast_launch_time || '');
-    return !Number.isFinite(t) || t <= cutoff;
-  });
-};
-
 const BRAND_IMG = 'https://tinboker.com/brand/tinboker-square-dark-1080.png';
 const CACHE_1H = { cf: { cacheTtl: 3600, cacheEverything: true } };
 const SITE = '聽播客 TinBoker';
@@ -70,8 +57,8 @@ export const tagNoindex = (total) => !(Number(total) >= MIN_TAG_EPISODES);
 // (the by-sector enrichment missed its deadline) stays indexable.
 export const MIN_SECTOR_EPISODES = 2;
 export const sectorNoindex = (total) => total != null && Number(total) < MIN_SECTOR_EPISODES;
-// Stock pages: indexable only with at least this many FREE 觀點 (older than the paywall
-// window, inside the 90 days the page shows). Measured 2026-10-01 over the 255 stock URLs
+// Stock pages: indexable only with at least this many 觀點 (inside the 90 days the page
+// shows). Measured 2026-10-01 over the 255 stock URLs
 // in the sitemap: 19 rendered no 觀點 at all (title + footer, ~100 characters), 79 had
 // fewer than three — one or two thesis lines under a heading — and the median crawler
 // body was 743 characters. Those are the pages AdSense's "low value content" describes.
@@ -253,8 +240,7 @@ const tallySentence = (name, t) =>
 // draw into text. Counts only: nothing here is gated, the page shows all of it to everyone.
 
 // 誰在談: how many of the 90-day mentions each show accounts for, most-vocal first.
-// Counts only, like WhoTalksTile — which is also why paywalled rows are counted: the
-// tile shows these totals to everyone, and a count gives away none of a row's text.
+// Counts only, like WhoTalksTile.
 export function whoTalks(insights) {
   const by = new Map();
   for (const i of insights || []) if (i.podcaster) by.set(i.podcaster, (by.get(i.podcaster) || 0) + 1);
@@ -544,10 +530,8 @@ export async function metaFor(pathname, origin, api) {
     const listed = quote && quote.ticker ? quote.ticker : sym;
     const name = stockDisplayName(quote && quote.name, listed);
     const url = `${origin}/stock/${encodeURIComponent(listed)}`;
-    // The tally counts every mention (the page shows that total to everyone); only
-    // the readable 觀點 are restricted to the free window.
     const insights = ins || [];
-    const readable = freeInsights(insights);
+    const readable = insights;
     const t = tally(insights);
     const latest = readable[0];
     // The description is the page's own numbers, so no two ticker pages read alike. The
