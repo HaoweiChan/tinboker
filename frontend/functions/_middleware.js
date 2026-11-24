@@ -531,10 +531,11 @@ export async function metaFor(pathname, origin, api) {
       withTimeout(getJson(`${api}/api/tickers/${enc}/mention-heat?days=730`, CACHE_1H), 6000),
       withTimeout(getJson(`${api}/api/stocks/${enc}/institutional?days=60`, CACHE_1H), 6000),
     ]);
-    const name = stockDisplayName(quote && quote.name, sym);
-    // 981A answers with the listing it is (00981A); point the canonical there, as the
-    // React page does with a redirect.
-    const url = `${origin}/stock/${encodeURIComponent(quote && quote.ticker ? quote.ticker : sym)}`;
+    // 981A answers with the listing it is (00981A); name it and point the canonical
+    // there, as the React page does with a redirect.
+    const listed = quote && quote.ticker ? quote.ticker : sym;
+    const name = stockDisplayName(quote && quote.name, listed);
+    const url = `${origin}/stock/${encodeURIComponent(listed)}`;
     // The tally counts every mention (the page shows that total to everyone); only
     // the readable 觀點 are restricted to the free window.
     const insights = ins || [];

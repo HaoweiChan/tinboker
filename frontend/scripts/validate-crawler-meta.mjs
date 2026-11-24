@@ -299,7 +299,11 @@ try {
   // Less than a year of stored bars (00981A starts 2026-09-18): say from when, not 近一年.
   assert.equal(rangeSentence({ ...QUOTE, range_from: '2026-09-18' }), '2026/9/18 以來最高 1,520.00、最低 980.00。');
   // A bare code canonicalizes to the listing the API resolved it to.
-  assert.equal((await metaFor('/stock/981A', ORIGIN, API)).url, `${ORIGIN}/stock/00981A`);
+  {
+    const alias = await metaFor('/stock/981A', ORIGIN, API);
+    assert.equal(alias.url, `${ORIGIN}/stock/00981A`);
+    assert.ok(alias.title.startsWith('台積電（00981A）'), `alias is named by its listing: ${alias.title}`);
+  }
   {
     // No bars (a private company, a foreign code we do not price): the old template,
     // and no ratios promised in the title.
