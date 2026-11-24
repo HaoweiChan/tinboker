@@ -526,29 +526,10 @@ def already_posted(episode_id: str) -> bool:
 
 def _record(episode_id: str, media_id: str, url: str, reply_ids: Optional[list[str]] = None,
             fmt: str = "episode_single", subject: Optional[str] = None, text: Optional[str] = None) -> None:
-    # The text is kept at publish time because the repeat check reads it for the NEXT
-    # slot; the provider copy only arrives with the daily insights sync.
+    # The text is kept at publish time; the provider copy only arrives with the daily
+    # insights sync, and a post-by-post read needs what was actually sent.
     social_ledger.record(PLATFORM, episode_id, media_id, url, reply_ids, fmt=fmt, subject=subject,
                          post_snapshot={"text": text} if text else None)
-
-
-def recent_post_texts(days: int = 3) -> list[str]:
-    """What the account said lately, newest first — the context of the repeat check.
-    Market-move flashes are left out: they are one-line facts, and the check was
-    validated on stories only."""
-    out = []
-    try:
-        rows = social_ledger.list_posted(PLATFORM, limit=60, days=days)
-    except Exception:  # noqa: BLE001 — no context means nothing is held back, not no post
-        logger.exception("recent post texts unavailable")
-        return []
-    for row in rows:
-        if row.get("format") == "market_move_intraday":
-            continue
-        text = (row.get("post_snapshot") or {}).get("text") or (row.get("provider_snapshot") or {}).get("text")
-        if isinstance(text, str) and text.strip():
-            out.append(text)
-    return out
 
 
 async def _post_single(service: ThreadsService, episode: Any, episode_id: str, draft: dict,
@@ -666,29 +647,19 @@ async def publish_recent(
     episodes = await podcast_service.get_recent_episodes(limit=limit, enrich_content=False)
 
     ranking: list[dict] = []
-    held: set[str] = set()
     if max_posts is not None and settings.social_slot_ranker_model:
         eligible: dict[str, Any] = {}
         for episode in episodes:
             episode_id = _field(episode, "id") or _field(episode, "episode_id") or ""
             if episode_id and _skip_reason(episode, episode_id, cutoff_ms) is None:
                 eligible[episode_id] = episode
-        texts = {}
-        for episode_id, episode in eligible.items():
-            thread = _field(episode, "social_thread") or {}
-            text = thread.get("post") if isinstance(thread, dict) else None
-            if isinstance(text, str) and text.strip():
-                texts[episode_id] = text
-        # Five shows retelling the week's one story is five posts the reader skips
-        # (17 of 30 in 10-16..10-26). A held episode stays unrecorded: a later slot may
-        # take it once the story has cooled, or it ages out of the window.
-        if texts and settings.openrouter_api_key:
-            held = await social_ranker.repeats_recent(texts, await asyncio.to_thread(recent_post_texts))
-            if held:
-                logger.warning("Threads slot holds back repeated stories: %s", ", ".join(sorted(held)))
-                eligible = {k: v for k, v in eligible.items() if k not in held}
-                texts = {k: v for k, v in texts.items() if k not in held}
         if len(eligible) > max_posts:
+            texts = {}
+            for episode_id, episode in eligible.items():
+                thread = _field(episode, "social_thread") or {}
+                text = thread.get("post") if isinstance(thread, dict) else None
+                if isinstance(text, str) and text.strip():
+                    texts[episode_id] = text
             scores = await social_ranker.score_posts(texts)
             if scores:
                 episodes = sorted(episodes, key=lambda ep: scores.get(
@@ -710,8 +681,7 @@ async def publish_recent(
         episode_id = _field(episode, "id") or _field(episode, "episode_id") or ""
         if not episode_id:
             continue
-        reason = _skip_reason(episode, episode_id, cutoff_ms) or (
-            "repeats_recent_story" if episode_id in held else None)
+        reason = _skip_reason(episode, episode_id, cutoff_ms)
         if reason:
             skipped.append({"episode_id": episode_id, "reason": reason})
             continue
