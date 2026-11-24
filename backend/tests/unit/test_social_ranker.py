@@ -29,7 +29,7 @@ def client(monkeypatch):
 
 def _response(answer, status=200):
     return httpx.Response(
-        status, text=json.dumps({"answers": {"counterintuitive": answer}}),
+        status, text=json.dumps({"answers": {"taiwan_reader": answer}}),
         request=httpx.Request("POST", "https://openrouter.ai/api/alpha/decisions"),
     )
 
