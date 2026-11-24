@@ -7,22 +7,16 @@ import { useRequireAuth } from '@/hooks/useRequireAuth';
 import { getPlans, quotePromo, startCheckout, type PromoQuote } from '@/services/api/billing';
 import type { BillingPlans } from '@/validation/schemas';
 import { formatMemberUntil } from '@/lib/date';
-import { INSIGHT_PAYWALL_DAYS } from '@/lib/insightPaywall';
 
 // What membership adds, each with a screenshot of the real member view (public/membership,
 // captured from a 400px-wide layout at 2x, so it reads at near 1:1 on a phone). Keep this list in step with the gates it describes:
-// 走勢 (PicksPage / batch-prices-windows, theme cards), 最新個股觀點 (INSIGHT_PAYWALL_DAYS),
+// 走勢 (PicksPage / batch-prices-windows, theme cards),
 // and 其他節目怎麼看 (/episodes/{id}/cross-show/detail; free users get a two-row preview).
 const BENEFITS = [
   {
     title: '走勢',
     body: '每一位財經 Podcaster 點名的個股與題材，從提及當日起算的 7／30／90 天實際走勢，可依節目篩選、依報酬排序。',
     image: { src: '/membership/picks.webp', width: 740, height: 592 },
-  },
-  {
-    title: '最新個股觀點',
-    body: `個股頁上最近 ${INSIGHT_PAYWALL_DAYS} 天的 Podcast 觀點摘要：誰在談、看多還是看空、理由是什麼。${INSIGHT_PAYWALL_DAYS} 天前的觀點對所有人免費。`,
-    image: { src: '/membership/insights.webp', width: 750, height: 752 },
   },
   {
     title: '其他節目怎麼看',

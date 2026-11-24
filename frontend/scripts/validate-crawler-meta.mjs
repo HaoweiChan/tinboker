@@ -328,19 +328,10 @@ try {
   }
   assert.ok(stock.description.length <= 160, 'stock description fits a snippet');
 
-  // Paywall: 觀點 from the last week are members-only on the page, so serving them
-  // to a crawler would be cloaking. The tally still counts every mention (the page
-  // shows that total to everyone) — only the readable rows are cut.
-  // (The shows' NAMES do appear: 誰在談 counts every mention per show, as the page's
-  // tile does for everyone. A count is not the gated text.)
-  for (const gated of ['href="/episode/e1"', '台積電是 AI 供應鏈核心持股', 'href="/episode/e4"', '長期看好。']) {
-    assert.ok(!stockPage.includes(gated), `paywalled mention leaked to the crawler body: ${gated}`);
-  }
-  assert.ok(stock.description.includes('最近：財經一路發'), `description quotes the newest FREE mention: ${stock.description}`);
-  // e2/e3 are older than the paywall window, so they stay indexable; e1 (1 day) and
-  // e4 (2 days) are members-only and must NOT reach a crawler — see the gated
-  // assertions below.
-  for (const needle of ['<h2>Podcast 觀點</h2>', 'href="/episode/e2"', 'href="/episode/e3"', 'href="/podcaster/%E8%B2%A1%E7%B6%93%E4%B8%80%E8%B7%AF%E7%99%BC"', 'href="/sector/sector_mlcc"', '看空']) {
+  // Every 觀點 in the 90-day window is free on the page, so the crawler body carries all
+  // of them, newest first, and the description quotes the newest one.
+  assert.ok(stock.description.includes('最近：Gooaye'), `description quotes the newest mention: ${stock.description}`);
+  for (const needle of ['<h2>Podcast 觀點</h2>', 'href="/episode/e1"', '台積電是 AI 供應鏈核心持股', 'href="/episode/e4"', '長期看好。', 'href="/episode/e2"', 'href="/episode/e3"', 'href="/podcaster/%E8%B2%A1%E7%B6%93%E4%B8%80%E8%B7%AF%E7%99%BC"', 'href="/sector/sector_mlcc"', '看空']) {
     assert.ok(stockPage.includes(needle), `stock body missing ${needle}`);
   }
   // The page's own numbers reach the crawler as text, not only the shows' thesis lines.
@@ -353,17 +344,16 @@ try {
   }
   assert.ok(!stockPage.includes('近 60 個交易日'), 'no 60-session line from 20 sessions of data');
   assert.deepEqual(ldTypes(stock), ['BreadcrumbList']);
-  // Indexability follows what the body carries: free 觀點, not total mentions. This
-  // fixture has four mentions but only two a non-member can read — a thin page.
-  assert.equal(stock.noindex, true, 'two readable 觀點 is below the floor');
+  // Indexability follows what the body carries: this fixture has four 觀點, all readable.
+  assert.equal(stock.noindex, false, 'four readable 觀點 is indexable');
   assert.equal(stockNoindex(MIN_STOCK_INSIGHTS), false);
   assert.equal(stockNoindex(MIN_STOCK_INSIGHTS - 1), true);
   assert.equal(stockNoindex(0), true);
   {
     const inner = globalThis.fetch;
-    const more = [...INSIGHTS, { ...INSIGHTS[1], episode_id: 'e5', podcast_launch_time: daysAgo(20) }];
-    globalThis.fetch = async (url) => (String(url).includes('/api/ticker-insights/by-ticker/') ? json(more) : inner(url));
-    assert.equal((await metaFor('/stock/2330', ORIGIN, API)).noindex, false, 'three readable 觀點 is indexable');
+    const two = INSIGHTS.slice(0, 2);
+    globalThis.fetch = async (url) => (String(url).includes('/api/ticker-insights/by-ticker/') ? json(two) : inner(url));
+    assert.equal((await metaFor('/stock/2330', ORIGIN, API)).noindex, true, 'two 觀點 is below the floor');
     // A failed insights fetch is unknown, not thin — do not noindex a page on an API blip.
     globalThis.fetch = async (url) => (String(url).includes('/api/ticker-insights/by-ticker/') ? new Response('', { status: 500 }) : inner(url));
     assert.equal((await metaFor('/stock/2330', ORIGIN, API)).noindex, false, 'insights fetch failure stays indexable');
