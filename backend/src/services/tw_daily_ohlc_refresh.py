@@ -15,8 +15,6 @@ numeric fields, and TPEx requires a browser User-Agent (plain curl 403s).
 
 Rows are filtered through ``is_tw_ticker`` so we store the ~2k ordinary stocks/ETFs the
 rest of the app looks up, not the ~9k OTC warrants/ETNs nobody queries.
-ponytail: is_tw_ticker drops 6-digit codes, so 6-digit ETFs (e.g. 006208) aren't stored;
-widen the filter here if per-chart 6-digit ETF history is ever needed.
 """
 
 from __future__ import annotations
@@ -541,7 +539,7 @@ def _insti_rows_for_date(iso: str) -> int:
 async def refresh_tw_institutional() -> int:
     """Fetch today's TWSE + TPEx 三大法人 net shares and upsert into Postgres. Never raises."""
     loop = asyncio.get_event_loop()
-    iso_today = _fetch_latest_market_date()  # the newest date the feeds carry
+    iso_today = await loop.run_in_executor(None, _fetch_latest_market_date)
     if not iso_today:
         return 0
     twse = await loop.run_in_executor(None, _fetch_twse_t86, iso_today)

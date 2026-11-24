@@ -11,6 +11,9 @@
 
 export type StockMarket = 'TW' | 'US' | 'KR';
 
+// Fixed list: new Taiwan ETFs receive a letter suffix.
+const TW_SIX_DIGIT_ETFS = new Set(['006201', '006203', '006204', '006205', '006206', '006207', '006208']);
+
 export function inferStockMarket(ticker: string): StockMarket {
   if (!ticker) return 'US';
   const clean = ticker.split('.')[0].toUpperCase();
@@ -18,7 +21,8 @@ export function inferStockMarket(ticker: string): StockMarket {
   // aren't mistaken for US alpha tickers.
   const core = /^\d+[A-Z]$/.test(clean) ? clean.slice(0, -1) : clean;
   if (!/^\d+$/.test(core)) return 'US';
-  // 6-digit numeric codes are Korean (005930 Samsung, 000660 SK Hynix); 3-5 digit
+  if (TW_SIX_DIGIT_ETFS.has(core)) return 'TW';
+  // Other 6-digit numeric codes are Korean (005930 Samsung, 000660 SK Hynix); 3-5 digit
   // codes are Taiwan (2330, 0050 ETFs). HK 4-digit codes (0700) can't be told
   // apart from TW by shape, so they stay TW — that needs a real market field.
   // (6-digit mainland A-shares would also fall here; none appear in the feed today.)

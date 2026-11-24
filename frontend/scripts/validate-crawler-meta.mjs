@@ -185,7 +185,10 @@ globalThis.fetch = async (url) => {
   }
   if (u.endsWith('/api/weekly')) return json({ weeks: [{ week: '2026-W36', start: '2026-08-31', end: '2026-09-06', episode_count: 12 }] });
   if (u.includes('/api/episodes/')) return json(EPISODE);
-  if (u.includes('/api/articles/')) return json({ title: '測試文章', subtitle: '這是一段夠長的文章副標，會直接當成 meta description 使用', key_points: ['第一點'] });
+  if (u.includes('/api/articles/')) return json({
+    title: '測試文章', subtitle: '這是一段夠長的文章副標，會直接當成 meta description 使用', key_points: ['第一點'],
+    body_content: '# 文章主題\n\n這是**文章正文**，包含*斜體*、`代碼`與[參考資料](https://example.com)。\n\n## 次標題\n\n- 第一項\n+ 第二項\n* 第三項\n1. 第四項\n\n### 細節\n\n<script>alert("x")</script> & 風險',
+  });
   if (u.includes('/api/tags/registry')) return json({ tags: [{ slug: 'ai', display_zh: '人工智慧' }] });
   if (u.includes('/api/ticker-insights/by-ticker/')) return json(INSIGHTS);
   if (u.includes('/api/ticker-insights/by-podcaster/')) return json(INSIGHTS);
@@ -240,6 +243,15 @@ try {
   }
   // The whole point: distinct pages must not share a title.
   assert.equal(titles.size, cases.length - 1, 'route titles collided (/topics/ai and /topics/AI are the same page)');
+
+  const article = await metaFor('/article/my-slug', ORIGIN, API);
+  assert.equal(article.body,
+    '<p>這是一段夠長的文章副標，會直接當成 meta description 使用</p><h2>重點</h2><ul><li>第一點</li></ul>'
+    + '<h2>文章主題</h2><p>這是文章正文，包含斜體、代碼與參考資料。</p>'
+    + '<h2>次標題</h2><p>第一項<br>第二項<br>第三項<br>第四項</p><h3>細節</h3>'
+    + '<p>&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt; &amp; 風險</p>',
+    'article body follows key points with escaped text and stripped Markdown');
+  assert.ok(renderPage(article).includes('這是文章正文'), 'article text reaches the crawler page');
 
   // Dynamic families: the body is the page's own content, with links into the site,
   // and at least one JSON-LD object. The length floor is what makes a page more than
