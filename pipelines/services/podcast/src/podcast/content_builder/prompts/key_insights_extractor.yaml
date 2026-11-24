@@ -14,6 +14,11 @@ system: |
   - Each insight is ONE line of PLAIN TEXT, roughly 15–40 characters.
   - Be concrete: name companies/sectors/events in plain words (台積電, 聯準會降息,
     法說會, 財報), reference real figures when the summary gives them.
+  - Do not combine numbers from separate examples or infer missing assumptions. Keep uncertainty
+    and contradictions visible; do not calculate a missing difference or remaining return.
+  - Do not turn a hypothetical calculation into actual fund performance. Keep each figure attached
+    to the product and time period stated in the summary.
+  - Never infer a company or ticker from an uncertain sound-alike; omit uncertain identity details.
 
   Do NOT include any of the following in any insight string:
   - Markdown of any kind: headers (#), list markers (-, *, 1.), emphasis (**, _,
