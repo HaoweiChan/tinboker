@@ -287,6 +287,29 @@ class StockInstitutionalDaily(Base):
     )
 
 
+class StockValuation(Base):
+    """Latest exchange-published 本益比 / 股價淨值比 / 殖利率 per TW stock.
+
+    Written by ``tw_daily_ohlc_refresh`` from TWSE BWIBBU_ALL (上市) and TPEx
+    peratio_analysis (上櫃): two keyless whole-market calls a run. One row per ticker,
+    overwritten each run — the stock page shows today's figures, nothing reads history.
+    ETFs are not in either feed, so they have no row. A null ratio means the exchange
+    published none (a loss-making company has no P/E).
+    ponytail: latest only; key on (ticker, date) if a valuation chart is ever wanted.
+    """
+
+    __tablename__ = "stock_valuations"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    ticker = Column(String(20), nullable=False, unique=True, index=True)
+    date = Column(String(10), nullable=False)  # YYYY-MM-DD the exchange computed it for
+    pe = Column(Float, nullable=True)
+    pb = Column(Float, nullable=True)
+    dividend_yield = Column(Float, nullable=True)  # percent, as the exchange publishes it
+    source = Column(String(20), nullable=True)  # twse | tpex
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 class ScreenerCandidate(Base):
     """Ranked whole-market TW anomaly-screener output for one trading day.
 

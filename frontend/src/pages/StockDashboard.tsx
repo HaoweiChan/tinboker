@@ -13,7 +13,8 @@ import { LockedInsightsCard } from '@/components/financial/LockedInsightsCard';
 import { useRequireAuth } from '@/hooks/useRequireAuth';
 import { useStockTrendColor } from '@/hooks/useStockTrendColor';
 import { getStockByTicker, getEpisodesByTicker, type Episode as ApiEpisode } from '@/services/api';
-import { getStockCardUrl } from '@/services/api/stocks';
+import { getStockCardUrl, getStockQuote } from '@/services/api/stocks';
+import { quoteLead, stockDisplayName, stockTitle, valuationItems } from '../../shared/stockQuote.js';
 import { fetchWithFallback } from '@/services/api/migration';
 import type { CompanyDetail, RealTimePriceUpdate, TimeframeOption, TickerInsight } from '@/services/types';
 import { priceWebSocketClient } from '@/services/websocket/priceWebSocket';
@@ -37,7 +38,7 @@ import { Skeleton } from '@/components/ui/Skeleton';
 import { Tile } from '@/components/redesign/Tile';
 import { SectorIcon } from '@/components/topics/SectorIcon';
 import { getSectorsByTicker } from '@/services/api/stocks';
-import type { SectorByTickerItem } from '@/validation/schemas';
+import type { SectorByTickerItem, StockQuote } from '@/validation/schemas';
 
 
 // Semantic sentiment colours (green bull / red bear), matching the chart dots and
@@ -59,7 +60,7 @@ const SUB_PANE_LABEL: Record<string, string> = {
   Volume: '成交量', RSI: 'RSI(14)', MACD: 'MACD', KD: 'KD', Bias: '乖離率',
 };
 
-const StockHeaderCard: React.FC<{ symbol: string; insights: TickerInsight[]; episodes: ApiEpisode[] }> = ({ symbol, insights, episodes }) => {
+const StockHeaderCard: React.FC<{ symbol: string; insights: TickerInsight[]; episodes: ApiEpisode[]; exchangeQuote: StockQuote | null }> = ({ symbol, insights, episodes, exchangeQuote }) => {
   const [stockData, setStockData] = useState<CompanyDetail | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [quote, setQuote] = useState<CompanyDetail | null>(null);
@@ -331,6 +332,11 @@ const StockHeaderCard: React.FC<{ symbol: string; insights: TickerInsight[]; epi
     { label: '20 日均量', value: periodStats?.avgVol ? fmtVol(periodStats.avgVol) : '—' },
     { label: '本益比', value: stockData?.pe ? stockData.pe.toFixed(1) : '—' },
   ];
+  // The exchange's own ratios (TWSE/TPEx, same day as the close) replace the FinMind P/E
+  // when present, and add the two the page never had.
+  const ratios = new Map(valuationItems(exchangeQuote));
+  if (ratios.has('本益比')) keyStats[keyStats.length - 1] = { label: '本益比', value: ratios.get('本益比') };
+  keyStats.push({ label: '淨值比', value: ratios.get('股價淨值比') ?? '—' }, { label: '殖利率', value: ratios.get('殖利率') ?? '—' });
 
   const stat = (label: string) => keyStats.find((k) => k.label === label)?.value ?? '—';
 
@@ -493,6 +499,12 @@ const StockHeaderCard: React.FC<{ symbol: string; insights: TickerInsight[]; epi
             <span>距高點 <span className="font-mono">{stat('距 52 週高點')}</span></span>
             <span>均量 <span className="text-foreground font-mono">{stat('20 日均量')}</span></span>
             <span>本益比 <span className="text-foreground font-mono">{stat('本益比')}</span></span>
+            {ratios.size > 0 && (
+              <>
+                <span>淨值比 <span className="text-foreground font-mono">{stat('淨值比')}</span></span>
+                <span>殖利率 <span className="text-foreground font-mono">{stat('殖利率')}</span></span>
+              </>
+            )}
           </div>
         </div>
 
@@ -561,6 +573,19 @@ export const StockDashboard: React.FC = () => {
   const anyReturns = useMemo(() => [...perfByEpisode.values()].some((p) => p && [p.r1d, p.r5d, p.r20d, p.r60d].some((v) => typeof v === 'number')), [perfByEpisode]);
   const [podcasts, setPodcasts] = useState<Podcast[]>([]);
   const [episodesLoading, setEpisodesLoading] = useState(true);
+  // Close, change, 52-week range and exchange ratios from Postgres. Drives the <title> and
+  // description (same words as the crawler body, shared/stockQuote.js) and the header ratios.
+  const [stockQuote, setStockQuote] = useState<StockQuote | null>(null);
+  useEffect(() => {
+    if (!symbol) return;
+    let alive = true;
+    setStockQuote(null);
+    getStockQuote(symbol)
+      .then((q) => { if (alive) setStockQuote(q); })
+      .catch(() => { if (alive) setStockQuote(null); });
+    return () => { alive = false; };
+  }, [symbol]);
+  const seoName = stockDisplayName(stockQuote?.name, symbol);
   const podcastImageMap = useMemo(() => {
     const map = new Map<string, string>();
     for (const p of podcasts) {
@@ -641,12 +666,12 @@ export const StockDashboard: React.FC = () => {
   return (
     <>
       <SEO
-        title={`${symbol} · 股價與相關 Podcast`}
-        description={`查看 ${symbol} 的即時股價走勢，以及最新提到此標的的 Podcast 摘要與分析。`}
+        title={stockTitle(seoName, stockQuote)}
+        description={`${quoteLead(seoName, stockQuote)}查看 ${seoName} 的股價走勢，以及最新提到此標的的 Podcast 摘要與分析。`.slice(0, 160)}
         url={typeof window !== 'undefined' ? window.location.href : undefined}
       />
       <PageContent>
-        <StockHeaderCard key={symbol} symbol={symbol} insights={insights} episodes={episodes} />
+        <StockHeaderCard key={symbol} symbol={symbol} insights={insights} episodes={episodes} exchangeQuote={stockQuote} />
 
         {insights.length > 0 && (
           <section className="mb-[18px]">
