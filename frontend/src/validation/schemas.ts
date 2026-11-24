@@ -357,6 +357,33 @@ export const InstitutionalResponseSchema = z.object({
 export type InstitutionalRow = z.infer<typeof InstitutionalRowSchema>;
 export type InstitutionalResponse = z.infer<typeof InstitutionalResponseSchema>;
 
+// GET /api/stocks/{ticker}/quote — last close, day change, 52-week range and the
+// exchange's valuation ratios, all from Postgres (backend quote_from_bars). The wording
+// built from it lives in shared/stockQuote.js, shared with the crawler body.
+export const StockQuoteSchema = z.object({
+  ticker: z.string(),
+  name: z.string().nullable(),
+  market: z.string(),
+  date: z.string(),
+  close: z.number(),
+  prev_close: z.number().nullable(),
+  change: z.number().nullable(),
+  change_pct: z.number().nullable(),
+  volume: z.number().nullable(),
+  high_52w: z.number(),
+  low_52w: z.number(),
+  range_from: z.string(),
+  valuation: z.object({
+    date: z.string(),
+    pe: z.number().nullable(),
+    pb: z.number().nullable(),
+    dividend_yield: z.number().nullable(),
+    source: z.string().nullable(),
+  }).nullable(),
+});
+
+export type StockQuote = z.infer<typeof StockQuoteSchema>;
+
 // ============================================
 // Interactive Model Schemas
 // ============================================
