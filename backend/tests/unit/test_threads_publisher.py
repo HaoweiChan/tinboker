@@ -920,21 +920,21 @@ async def test_publish_recent_posts_stocks_with_a_written_post_as_one_chart(temp
     chart = _ep_cards("C1", _cards(), tickers=["AAPL", "META", "MU"])
     chart.social_thread = {"post": "Meta 那張財報最可怕的數字 不在營收", "comments": [{"text": "x"}]}
     macro = _ep_cards("C2", _cards(), tickers=["AAPL", "AMZN", "MSFT"])
-    macro.social_thread = {"post": "公債殖利率大跌 科技股卻一起崩", "comments": []}
+    macro.social_thread = {"post": "公債殖利率大跌 科技股卻一起崩", "comments": []}   # no lead stock → the deck
     legacy = _ep_cards("C3", _cards())                            # no written post → the deck
     monkeypatch.setattr(threads_publisher.podcast_service, "get_recent_episodes",
                         await _fake_recent([chart, macro, legacy]))
 
     dry = await threads_publisher.publish_recent(limit=5, dry_run=True)
-    assert [p.get("kind") for p in dry["posted"]] == ["chart", "text", None] and fake.calls == []
+    assert [p.get("kind") for p in dry["posted"]] == ["chart", None, None] and fake.calls == []
 
     await threads_publisher.publish_recent(limit=5, dry_run=False)
     singles = [c for c in fake.calls if c[0] == "single"]
     assert singles[0][1].startswith("https://api.tinboker.com/api/og/stock/META.png?")
-    assert singles[1] == ("single", None)
-    assert [c[0] for c in fake.calls].count("carousel") == 1      # only the legacy episode
+    assert len(singles) == 1
+    assert [c[0] for c in fake.calls].count("carousel") == 2      # macro and legacy keep the deck
     rows = {r["episode_id"]: r for r in social_ledger.list_posted("threads")}
     assert (rows["C1"]["format"], rows["C1"]["subject"]) == ("episode_chart", "META")
     assert rows["C1"]["post_snapshot"] == {"text": "Meta 那張財報最可怕的數字 不在營收"}
-    assert rows["C2"]["format"] == "episode_text" and rows["C3"]["format"] == "episode_thread"
+    assert rows["C2"]["format"] == rows["C3"]["format"] == "episode_thread"
     assert len(rows["C1"]["child_ids"]) == 1                      # the link reply only, no chain
