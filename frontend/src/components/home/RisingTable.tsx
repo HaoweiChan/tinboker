@@ -24,18 +24,18 @@ export const RisingTable: React.FC<Props> = ({ rows }) => {
       {rows.length === 0 ? (
         <div className="h-40 animate-pulse bg-muted/40 rounded-md" />
       ) : (
-        <div className="grid grid-cols-[auto_1fr_auto_auto] items-center gap-x-3 sm:gap-x-4 text-sm">
+        <div className="grid grid-cols-[minmax(0,auto)_1fr_auto_auto] sm:grid-cols-[auto_1fr_auto_auto] items-center gap-x-3 sm:gap-x-4 text-sm">
           {rows.map((r, i) => (
             // Row-as-link via subgrid — see BuzzRank: the name alone was a 21px target.
             <Link
               key={r.ticker}
               to={`/stock/${encodeURIComponent(r.ticker)}`}
-              className="group/row col-span-4 grid grid-cols-subgrid items-center py-[7px] rounded-[3px] transition-colors hover:bg-muted/40"
+              className="group/row col-span-4 grid min-w-0 grid-cols-subgrid items-center py-[7px] rounded-[3px] transition-colors hover:bg-muted/40"
             >
-              <span className="font-semibold font-mono whitespace-nowrap transition-colors group-hover/row:text-primary">
-                {r.ticker}
-                {r.name && <span className="ml-1.5 font-sans font-normal text-sm text-muted-foreground inline-block align-bottom truncate max-w-[72px] sm:max-w-[120px]">{r.name}</span>}
-                {r.prev_7d <= 1 && <span className="ml-1.5 align-[1px] text-2xs text-accent-info border border-accent-info rounded px-1">NEW</span>}
+              <span className="flex min-w-0 items-baseline sm:block font-semibold font-mono whitespace-nowrap transition-colors group-hover/row:text-primary">
+                <span className="shrink-0">{r.ticker}</span>
+                {r.name && <span className="min-w-0 ml-1.5 font-sans font-normal text-sm text-muted-foreground inline-block align-bottom truncate max-w-[72px] sm:max-w-[120px]">{r.name}</span>}
+                {r.prev_7d <= 1 && <span className="shrink-0 ml-1.5 align-[1px] text-2xs text-accent-info border border-accent-info rounded px-1">NEW</span>}
               </span>
               <Bar value={r.count_7d} max={max} tone="momentum" delayMs={i * 60} />
               <span className="font-mono tabular-nums text-right whitespace-nowrap">

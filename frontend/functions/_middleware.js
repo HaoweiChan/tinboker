@@ -24,8 +24,9 @@
 
 import { ABOUT, TERMS, METHODOLOGY } from '../shared/sitePages.js';
 import { CROSS_SHOW_LOCKED, crossShowLead, stanceZh } from '../shared/crossShow.js';
+import { closeSentence, quoteLead, rangeSentence, stockDisplayName, stockTitle, valuationSentence } from '../shared/stockQuote.js';
 
-const CRAWLER = /bot|crawl|spider|mediapartners|facebookexternalhit|facebot|twitterbot|\bline\b|slackbot|whatsapp|telegrambot|discordbot|pinterest|linkedinbot|redditbot|embedly|quora|skypeuripreview|applebot|googlebot|bingbot|baiduspider|yandex|duckduckbot/i;
+const CRAWLER = /bot|crawl|spider|mediapartners|facebookexternalhit|facebot|twitterbot|\bline\b|slackbot|whatsapp|telegrambot|discordbot|pinterest|linkedinbot|redditbot|embedly|quora|skypeuripreview|applebot|googlebot|google-inspectiontool|googleother|bingbot|baiduspider|yandex|duckduckbot/i;
 
 // Podcast 觀點 from the last week are members-only on the page, so they are left out
 // of the crawler body too — serving Googlebot what a reader is asked to pay for is
@@ -198,17 +199,24 @@ const labelled = (items) => ul(items.map((i) => `<strong>${esc(i.label)}：</str
 // carrying '(#time:ms)' anchors, '[text](#tag:x)' links, paragraphs. The client strips the
 // same anchors (src/utils/timeFormat.ts), so the text matches what the page renders.
 // The page's H1 is the episode title, so summary headings shift down one level.
-export function mdToHtml(md) {
+// Articles also strip inline formatting/list markers and use h2/h3 headings.
+export function mdToHtml(md, isArticle = false) {
   const out = [];
-  for (const block of String(md || '').split(/\n{2,}/)) {
-    const t = block.trim()
+  for (const block of String(md || '').split(isArticle ? /\r?\n[ \t]*\r?\n/ : /\n{2,}/)) {
+    let t = block.trim()
       .replace(/\(#time:\s*\d+\)/g, '')
       .replace(/\[([^\]]+)\]\(#[^)]*\)/g, '$1')
       .trim();
+    if (isArticle) {
+      t = t.replace(/^[ \t]*(?:[-+*]|\d+[.)])[ \t]+/gm, '')
+        .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+        .replace(/[*`]/g, '')
+        .trim();
+    }
     if (!t) continue;
     const h = t.match(/^(#{1,3})\s+([\s\S]*)$/);
     if (h) {
-      const lvl = Math.min(h[1].length + 1, 4);
+      const lvl = isArticle ? Math.max(h[1].length, 2) : Math.min(h[1].length + 1, 4);
       out.push(`<h${lvl}>${esc(h[2].trim())}</h${lvl}>`);
     } else {
       out.push(`<p>${esc(t).replace(/\n/g, '<br>')}</p>`);
@@ -503,7 +511,8 @@ export async function metaFor(pathname, origin, api) {
       type: 'article',
       url,
       body: (a_.subtitle ? `<p>${esc(a_.subtitle)}</p>` : '')
-        + ((a_.key_points || []).length ? `<h2>重點</h2>${ul(a_.key_points.map(esc))}` : ''),
+        + ((a_.key_points || []).length ? `<h2>重點</h2>${ul(a_.key_points.map(esc))}` : '')
+        + mdToHtml(a_.body_content, true),
       ld: [{
         '@context': 'https://schema.org', '@type': 'Article', headline: a_.title, url, image,
         ...(a_.published_at ? { datePublished: a_.published_at } : {}),
@@ -521,25 +530,31 @@ export async function metaFor(pathname, origin, api) {
     const since = iso(new Date(Date.now() - 90 * 86400e3));
     // heat + flows are enrichments with a deadline (each ~1.5 s warm): a slow one costs
     // the page a section, never the crawl.
-    const [ins, secs, basic, heat, flows] = await Promise.all([
+    // quote is Postgres-only (price, change, 52-week range, exchange ratios, name). It
+    // replaced /basic here, which went to FinMind/Massive on every cold crawl.
+    const [ins, secs, quote, heat, flows] = await Promise.all([
       getJson(`${api}/api/ticker-insights/by-ticker/${enc}?start_date=${since}&end_date=${iso(new Date())}`),
       getJson(`${api}/api/sectors/by-ticker/${enc}`),
-      getJson(`${api}/api/stocks/${enc}/basic`),
+      withTimeout(getJson(`${api}/api/stocks/${enc}/quote`, CACHE_1H), 6000),
       withTimeout(getJson(`${api}/api/tickers/${enc}/mention-heat?days=730`, CACHE_1H), 6000),
       withTimeout(getJson(`${api}/api/stocks/${enc}/institutional?days=60`, CACHE_1H), 6000),
     ]);
-    const name = basic && basic.name ? `${basic.name}（${sym}）` : sym;
-    const url = `${origin}/stock/${enc}`;
+    // 981A answers with the listing it is (00981A); name it and point the canonical
+    // there, as the React page does with a redirect.
+    const listed = quote && quote.ticker ? quote.ticker : sym;
+    const name = stockDisplayName(quote && quote.name, listed);
+    const url = `${origin}/stock/${encodeURIComponent(listed)}`;
     // The tally counts every mention (the page shows that total to everyone); only
     // the readable 觀點 are restricted to the free window.
     const insights = ins || [];
     const readable = freeInsights(insights);
     const t = tally(insights);
     const latest = readable[0];
-    // The description is the page's own numbers, so no two ticker pages read alike.
-    const description = t.total && latest
-      ? `${tallySentence(name, t)}最近：${latest.podcaster}（${day(latest.podcast_launch_time)}）${latest.bluf_thesis || ''}`.slice(0, 160)
-      : `查看 ${name} 的即時股價走勢，以及最新提到此標的的 Podcast 摘要與分析。`;
+    // The description is the page's own numbers, so no two ticker pages read alike. The
+    // price facts lead: they are what a "<code> 股價" searcher decides to click on.
+    const description = (quoteLead(name, quote) + (t.total && latest
+      ? `${tallySentence(name, t)}最近：${latest.podcaster}（${day(latest.podcast_launch_time)}）${latest.bluf_thesis || ''}`
+      : `查看 ${name} 的股價走勢，以及最新提到此標的的 Podcast 摘要與分析。`)).slice(0, 160);
     const members = (secs && secs.items) || [];
     // The page's own numbers, as text: 誰在談 (WhoTalksTile), the chart's mention strip
     // and 聲量水位 pane (TradingViewChart), and the 三大法人 card (InstitutionalFlowCard).
@@ -558,14 +573,18 @@ export async function metaFor(pathname, origin, api) {
       + (sums.length
         ? `<h2>三大法人買賣超</h2>${ul(sums.map((f) => esc(`近 ${f.days} 個交易日：三大法人合計${lotsZh(f.total)}，其中外資${lotsZh(f.foreign)}`)))}`
         : '');
-    const body = (insights.length ? `<p>${esc(tallySentence(name, t))}</p>` : '')
+    const priceFacts = closeSentence(quote) + rangeSentence(quote);
+    const body = (priceFacts
+      ? `<h2>股價</h2><p>${esc(priceFacts)}</p>${valuationSentence(quote) ? `<p>${esc(valuationSentence(quote))}</p>` : ''}`
+      : '')
+      + (insights.length ? `<p>${esc(tallySentence(name, t))}</p>` : '')
       + numbers
       + (members.length ? `<h2>產業 / 題材</h2>${ul(members.map((s) => `${sectorLink(s)}${s.reason ? `：${esc(s.reason)}` : ''}`))}` : '')
       + (readable.length ? `<h2>Podcast 觀點</h2>${ul(readable.map((i) =>
         `${esc(day(i.podcast_launch_time))} · ${podcasterLink(i.podcaster)} · ${esc(sentimentZh(i.sentiment_label))}`
         + `${i.time_horizon ? ` · ${esc(i.time_horizon)}` : ''} · ${a(`/episode/${encodeURIComponent(i.episode_id)}`, i.bluf_thesis || '')}`))}` : '');
     return {
-      title: `${name} · 股價與相關 Podcast`,
+      title: stockTitle(name, quote),
       description,
       image: BRAND_IMG,
       type: 'website',

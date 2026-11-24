@@ -8,9 +8,10 @@ budget on calls that always 404.
 import pytest
 
 from src.services.finmind_service import FinMindAPIService, is_tw_ticker
+from src.utils.market import infer_market
 
 
-# (ticker, is_tw) — TW codes are 4-5 digits; 6-digit are KR, alpha is US, junk is neither.
+# (ticker, is_tw) — TW codes are 4-5 digits or legacy ETFs; other 6-digit codes are KR.
 CASES = [
     ("2330", True), ("1101", True), ("2330.TW", True), ("00878", True),  # TW
     ("005930", False), ("035420", False), ("000660", False), ("000150", False),  # KR (6-digit)
@@ -24,6 +25,16 @@ CASES = [
 @pytest.mark.parametrize("ticker,expected", CASES)
 def test_is_tw_ticker(ticker, expected):
     assert is_tw_ticker(ticker) is expected
+
+
+@pytest.mark.parametrize("ticker,expected", [
+    ("006201", "TW"), ("006203", "TW"), ("006204", "TW"), ("006205", "TW"),
+    ("006206", "TW"), ("006207", "TW"), ("006208", "TW"),
+    ("005930", "KR"), ("000660", "KR"), ("006400", "KR"), ("006800", "KR"),
+])
+def test_six_digit_etf_market(ticker, expected):
+    assert infer_market(ticker) == expected
+    assert is_tw_ticker(ticker) is (expected == "TW")
 
 
 def test_non_tw_tickers_never_consume_budget(monkeypatch):

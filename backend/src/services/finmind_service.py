@@ -319,40 +319,10 @@ class FinMindAPIService:
         Returns:
             Snapshot dict with latest price data or None if error
         """
-        try:
-            today = datetime.now().strftime("%Y-%m-%d")
-            
-            params = {
-                "dataset": "taiwan_stock_tick_snapshot",
-                "data_id": ticker,
-                "date": today,
-            }
-            
-            data = self._make_request(params)
-            if data and data.get("data"):
-                df = pd.DataFrame(data["data"])
-                if not df.empty:
-                    # Get the latest record
-                    latest = df.iloc[-1]
-                    deal_price = latest.get("deal_price")
-                    volume = latest.get("volume", 0)
-                    
-                    # Use deal_price as close price
-                    return {
-                        "ticker": ticker,
-                        "open": deal_price,  # Approximate
-                        "high": deal_price,  # Approximate
-                        "low": deal_price,  # Approximate
-                        "close": deal_price,
-                        "price": deal_price,
-                        "volume": int(volume) if pd.notna(volume) else 0,
-                    }
-            
-            # Fallback to daily price if tick snapshot not available
-            return self._get_latest_daily_price(ticker)
-        except Exception as e:
-            logger.error(f"Error fetching ticker snapshot for {ticker}: {e}")
-            return None
+        # ponytail: taiwan_stock_tick_snapshot is not on our FinMind tier (422 on every
+        # call, ~900/day burning the hourly budget), so go straight to the daily close.
+        # Restore the tick call if the plan is upgraded to Sponsor.
+        return self._get_latest_daily_price(ticker)
     
     def _get_latest_daily_price(self, ticker: str) -> Optional[Dict[str, Any]]:
         """Get latest daily price as fallback."""
@@ -654,51 +624,9 @@ class FinMindAPIService:
         Returns:
             List of minute bar dicts with OHLCV data
         """
-        try:
-            if not from_date:
-                from_date = (datetime.now() - timedelta(days=5)).strftime("%Y-%m-%d")
-            if not to_date:
-                to_date = datetime.now().strftime("%Y-%m-%d")
-            
-            params = {
-                "dataset": "TaiwanStockKBar",
-                "data_id": ticker,
-                "start_date": from_date,
-                "end_date": to_date,
-                "freq": "1min",
-            }
-            
-            data = self._make_request(params)
-            bars = []
-            if data and data.get("data"):
-                df = pd.DataFrame(data["data"])
-                for _, row in df.head(limit).iterrows():
-                    # Convert date to timestamp
-                    try:
-                        date_str = str(row.get("date", ""))
-                        if "T" in date_str:
-                            dt = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
-                        else:
-                            dt = datetime.strptime(date_str, "%Y-%m-%d")
-                        timestamp = int(dt.timestamp() * 1000)
-                    except Exception:
-                        timestamp = int(datetime.now().timestamp() * 1000)
-                    
-                    bars.append({
-                        "ticker": ticker,
-                        "timestamp": timestamp,
-                        "open": float(row.get("open", 0)),
-                        "high": float(row.get("high", 0)),
-                        "low": float(row.get("low", 0)),
-                        "close": float(row.get("close", 0)),
-                        "volume": int(row.get("volume", 0)),
-                        "vwap": None,
-                        "transactions": None,
-                    })
-            return bars
-        except Exception as e:
-            logger.error(f"Error fetching minute aggregates for {ticker}: {e}")
-            return []
+        # ponytail: TaiwanStockKBar is Sponsor-only (400 on our tier), so every call
+        # spent budget for nothing. No minute bars until the plan changes.
+        return []
     
     def get_daily_aggregates(
         self,

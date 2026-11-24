@@ -18,7 +18,7 @@ export const BuzzRank: React.FC<Props> = ({ rows }) => {
       {rows.length === 0 ? (
         <div className="h-40 animate-pulse bg-muted/40 rounded-md" />
       ) : (
-        <div className="grid grid-cols-[auto_1fr_auto_auto] items-center gap-x-3 sm:gap-x-4 text-sm">
+        <div className="grid grid-cols-[minmax(0,auto)_1fr_auto_auto] sm:grid-cols-[auto_1fr_auto_auto] items-center gap-x-3 sm:gap-x-4 text-sm">
           {rows.map((r, i) => {
             return (
               // The whole row is the link, via subgrid so the columns still line up with
@@ -28,15 +28,15 @@ export const BuzzRank: React.FC<Props> = ({ rows }) => {
               <Link
                 key={r.ticker}
                 to={`/stock/${encodeURIComponent(r.ticker)}`}
-                className="group/row col-span-4 grid grid-cols-subgrid items-center py-[7px] rounded-[3px] transition-colors hover:bg-muted/40"
+                className="group/row col-span-4 grid min-w-0 grid-cols-subgrid items-center py-[7px] rounded-[3px] transition-colors hover:bg-muted/40"
               >
-                <span className="font-semibold font-mono whitespace-nowrap transition-colors group-hover/row:text-primary">
-                  <span className={`text-2xs tabular-nums mr-1.5 ${i === 0 ? 'text-primary' : 'text-muted-foreground'}`}>{String(i + 1).padStart(2, '0')}</span>
-                  {r.ticker}{r.name && <span className="ml-1.5 font-sans font-normal text-sm text-muted-foreground">{r.name}</span>}
+                <span className="flex min-w-0 items-baseline sm:block font-semibold font-mono whitespace-nowrap transition-colors group-hover/row:text-primary">
+                  <span className={`shrink-0 text-2xs tabular-nums mr-1.5 ${i === 0 ? 'text-primary' : 'text-muted-foreground'}`}>{String(i + 1).padStart(2, '0')}</span>
+                  <span className="shrink-0">{r.ticker}</span>{r.name && <span className="min-w-0 truncate ml-1.5 font-sans font-normal text-sm text-muted-foreground">{r.name}</span>}
                 </span>
                 <Bar value={r.count_30d} max={max} tone="ticker" delayMs={i * 60} />
-                <span className="font-mono tabular-nums text-right">{r.count_30d} <span className="text-2xs text-muted-foreground">集</span></span>
-                <span className="text-right min-w-[48px] font-semibold"><DeltaText now={r.count_30d} prev={r.prev_30d} /></span>
+                <span className="font-mono tabular-nums text-right whitespace-nowrap">{r.count_30d} <span className="text-2xs text-muted-foreground">集</span></span>
+                <span className="text-right min-w-[48px] font-semibold whitespace-nowrap"><DeltaText now={r.count_30d} prev={r.prev_30d} /></span>
               </Link>
             );
           })}

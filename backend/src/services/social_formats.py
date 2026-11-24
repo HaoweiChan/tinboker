@@ -149,6 +149,11 @@ async def _weekly_editorial(payload: dict) -> Optional[dict]:
     try:
         async with httpx.AsyncClient(timeout=httpx.Timeout(300.0, connect=5.0)) as client:
             response = await client.post(f"{base}/api/podcast/weekly-editorial", headers=headers, json=payload)
+            if response.status_code == 422:
+                # The pipeline's evidence checks rejected this week's draft. The result is
+                # cached, so every retry gets the same answer: the week is skipped by design.
+                logger.warning("weekly editorial skipped for %s: %s", payload["week"], response.text[:300])
+                return None
             response.raise_for_status()
             return response.json()
     except Exception:

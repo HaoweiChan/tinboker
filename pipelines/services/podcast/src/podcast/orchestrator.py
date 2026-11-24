@@ -457,6 +457,15 @@ def _process_single_podcast(
             episodes = kept
 
         if fill_limit:
+            # The scheduled ingest runs --fill-limit on every tick. Without the source's
+            # recency window it walks each feed backwards until it runs dry: CNBC's
+            # 2,244-episode feed was being summarized 16/day back toward 2017, every one
+            # retracted on arrival (outside the release window). A deliberate backfill
+            # passes --since, which opts out of the window.
+            if lookback_days and not since:
+                episodes = _select_recent_episodes(
+                    episodes, lookback_days=lookback_days, max_episodes=None, legacy_limit=None,
+                )
             episodes = _filter_unprocessed_episodes(
                 episodes, name, max_episodes or limit, service_container,
                 required_urls=lambda episode: required_artifact_urls(

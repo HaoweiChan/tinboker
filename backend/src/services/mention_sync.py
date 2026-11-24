@@ -720,6 +720,9 @@ def run_sync_cycle() -> dict:
         except Exception as e:
             logger.warning("mention sync: macro mention pass failed: %s", e)
             session.rollback()
+        # End the open transaction: the yfinance backfill below takes minutes, and an
+        # idle-in-transaction session gets killed by Postgres before the snapshot pass.
+        session.commit()
         try:
             # Closes first, so the snapshots below can score old US calls this cycle.
             from src.services.stock_close_refresh import backfill_us_mention_history

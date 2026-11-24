@@ -15,8 +15,6 @@ numeric fields, and TPEx requires a browser User-Agent (plain curl 403s).
 
 Rows are filtered through ``is_tw_ticker`` so we store the ~2k ordinary stocks/ETFs the
 rest of the app looks up, not the ~9k OTC warrants/ETNs nobody queries.
-ponytail: is_tw_ticker drops 6-digit codes, so 6-digit ETFs (e.g. 006208) aren't stored;
-widen the filter here if per-chart 6-digit ETF history is ever needed.
 """
 
 from __future__ import annotations
@@ -29,7 +27,7 @@ import requests
 
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-from src.database.models import StockDailyOHLC, StockInstitutionalDaily, StockTranslation
+from src.database.models import StockDailyOHLC, StockInstitutionalDaily, StockTranslation, StockValuation
 from src.database.postgres import get_session
 from src.utils.market import infer_market
 from src.services.finmind_service import is_tw_ticker
@@ -541,7 +539,7 @@ def _insti_rows_for_date(iso: str) -> int:
 async def refresh_tw_institutional() -> int:
     """Fetch today's TWSE + TPEx 三大法人 net shares and upsert into Postgres. Never raises."""
     loop = asyncio.get_event_loop()
-    iso_today = _fetch_latest_market_date()  # the newest date the feeds carry
+    iso_today = await loop.run_in_executor(None, _fetch_latest_market_date)
     if not iso_today:
         return 0
     twse = await loop.run_in_executor(None, _fetch_twse_t86, iso_today)
@@ -589,6 +587,72 @@ async def backfill_tw_institutional(days: int = _INSTI_BACKFILL_DAYS, gap_second
     return total
 
 
+# ── Valuation (本益比 / 股價淨值比 / 殖利率), same two exchanges ──────────────────────
+# The stock page had a P/E from a per-ticker FinMind call and a dividend yield that was
+# always 0 (TaiwanStockPER's yield was never mapped). Both exchanges publish all three
+# ratios for every listed stock in one keyless call; ETFs are not in either feed.
+_TWSE_VAL_URL = "https://openapi.twse.com.tw/v1/exchangeReport/BWIBBU_ALL"
+_TPEX_VAL_URL = "https://www.tpex.org.tw/openapi/v1/tpex_mainboard_peratio_analysis"
+_VAL_COLUMNS = ("date", "pe", "pb", "dividend_yield", "source")
+
+
+def _ratio(raw: Any) -> Optional[float]:
+    """A P/E or P/B: blank, '--' and non-positive mean the exchange published none."""
+    v = _num(raw)
+    return v if v is not None and v > 0 else None
+
+
+def _normalize_twse_val(rec: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    ticker = str(rec.get("Code", "")).strip()
+    date = _roc_to_iso(str(rec.get("Date", "")))
+    if not ticker or not date or not is_tw_ticker(ticker):
+        return None
+    return {"ticker": ticker, "date": date, "pe": _ratio(rec.get("PEratio")),
+            "pb": _ratio(rec.get("PBratio")), "dividend_yield": _num(rec.get("DividendYield")),
+            "source": "twse"}
+
+
+def _normalize_tpex_val(rec: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    ticker = str(rec.get("SecuritiesCompanyCode", "")).strip()
+    date = _roc_to_iso(str(rec.get("Date", "")))
+    if not ticker or not date or not is_tw_ticker(ticker):
+        return None
+    return {"ticker": ticker, "date": date, "pe": _ratio(rec.get("PriceEarningRatio")),
+            "pb": _ratio(rec.get("PriceBookRatio")), "dividend_yield": _num(rec.get("YieldRatio")),
+            "source": "tpex"}
+
+
+def _upsert_valuations(rows: List[Dict[str, Any]]) -> int:
+    """One row per ticker, overwritten. Sync (runs in a thread)."""
+    latest = {r["ticker"]: r for r in rows}
+    if not latest:
+        return 0
+    values = [{"ticker": t, **{c: r.get(c) for c in _VAL_COLUMNS}} for t, r in latest.items()]
+    for session in get_session():
+        try:
+            stmt = pg_insert(StockValuation.__table__).values(values)
+            stmt = stmt.on_conflict_do_update(
+                index_elements=["ticker"], set_={c: stmt.excluded[c] for c in _VAL_COLUMNS},
+            )
+            session.execute(stmt)
+            session.commit()
+            return len(values)
+        except Exception as e:
+            session.rollback()
+            logger.warning("Valuation upsert failed (%d rows): %s", len(values), e)
+    return 0
+
+
+async def refresh_tw_valuations() -> int:
+    """Fetch TWSE + TPEx whole-market P/E, P/B and yield and upsert. Never raises."""
+    loop = asyncio.get_event_loop()
+    twse = await loop.run_in_executor(None, _fetch, _TWSE_VAL_URL, _normalize_twse_val, None)
+    tpex = await loop.run_in_executor(None, _fetch, _TPEX_VAL_URL, _normalize_tpex_val, {"User-Agent": _BROWSER_UA})
+    written = await loop.run_in_executor(None, _upsert_valuations, twse + tpex)
+    logger.info("TW valuation refresh: wrote %d rows (twse=%d, tpex=%d).", written, len(twse), len(tpex))
+    return written
+
+
 async def run_periodic_tw_ohlc_refresh(
     interval_hours: float = 6.0,
     backfill_days: int = _BACKFILL_DAYS,
@@ -620,6 +684,10 @@ async def run_periodic_tw_ohlc_refresh(
             await refresh_tw_names()
         except Exception as e:
             logger.warning("TW name sync cycle failed: %s", e)
+        try:
+            await refresh_tw_valuations()
+        except Exception as e:
+            logger.warning("TW valuation refresh cycle failed: %s", e)
         if first:
             first = False
             try:
@@ -654,4 +722,5 @@ if __name__ == "__main__":
         print("OHLC wrote", asyncio.run(refresh_tw_daily_ohlc()), "rows")
         print("institutional wrote", asyncio.run(refresh_tw_institutional()), "rows")
         print("names corrected", asyncio.run(refresh_tw_names()))
+        print("valuations wrote", asyncio.run(refresh_tw_valuations()), "rows")
     sys.exit(0)

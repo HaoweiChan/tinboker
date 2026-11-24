@@ -119,3 +119,17 @@ def test_batch_prices_since_never_calls_massive(client, massive_calls, monkeypat
     assert body["NVDA"] == 10.0            # 100 on 09-05 -> 110 latest
     assert body["CAA"] is None
     assert sum(massive_calls.values()) == 0, dict(massive_calls)
+
+
+def test_batch_prices_nan_cached_change_is_null_not_500(client, monkeypatch):
+    """A NaN changePercent in a /basic cache entry used to 500 the whole batch (prod, 2026-11)."""
+    import src.routers.stock as stock
+
+    async def _nan_basic(key):
+        return '{"changePercent": NaN}' if key.startswith("stock:CAA:basic") else None
+
+    monkeypatch.setattr(stock, "cache_get", _nan_basic)
+    _freeze_today(monkeypatch)
+    r = client.get("/api/stocks/batch-prices", params={"tickers": "NVDA,CAA"})
+    assert r.status_code == 200
+    assert r.json() == {"NVDA": 10.0, "CAA": None}
