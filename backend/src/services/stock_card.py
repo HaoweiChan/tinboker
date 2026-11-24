@@ -17,7 +17,7 @@ from xml.sax.saxutils import escape
 
 from src.services.card_theme import (
     AMBER, BG, BORDER, DOWN, FAINT, INK, LABEL, MARGIN, SIZE, UP,
-    advance as _advance, card_font, fmt as _fmt,
+    advance as _advance, card_font, fit, fmt as _fmt,
 )
 from src.utils.market import infer_market
 
@@ -91,8 +91,13 @@ def stock_card_svg(stock: dict, mentions: list[dict], days: int = 90,
          f'<rect width="{SIZE}" height="{SIZE}" fill="{BG}"/>']
 
     # ── header ──
+    # The name shares its baseline with the brand mark at the right edge. Massive's US
+    # names ("Meta Platforms, Inc. Class A Common Stock") ran straight through it.
+    brand = _advance("TinBoker 聽播客", 26) + 24
+    name = fit(str(stock.get("name") or ticker), 44,
+               SIZE - 2 * MARGIN - brand - _advance(f" {ticker}", 34))
     s.append(f'<text x="{MARGIN}" y="78" fill="{INK}" font-size="44" font-weight="700">'
-             f'{escape(str(stock.get("name") or ticker))} '
+             f'{escape(name)} '
              f'<tspan fill="{LABEL}" font-size="34">{escape(ticker)}</tspan></text>')
     s.append(f'<text x="{MARGIN}" y="146" fill="{colour}" font-size="64" font-weight="700">'
              f'{float(stock.get("price") or 0):,.2f}'

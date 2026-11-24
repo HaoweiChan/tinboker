@@ -878,3 +878,63 @@ async def test_publish_retries_media_not_found(monkeypatch):
     with pytest.raises(ThreadsError, match="4279009"):
         await service._publish_container(stuck, "c1")
     assert stuck.calls == 4
+
+
+# ── stocks + a written post: one chart, not the deck ───────────────────────
+
+# As stock_translations stores them: META's zh name is 臉書, MU's is 美光科技.
+_LABELS = {"META": ["臉書", "Meta Platforms"], "CRWV": ["CoreWeave"], "MU": ["美光科技", "美光", "Micron Technology"],
+           "2330": ["台積電"], "AI": ["C3.ai"]}
+
+
+def test_spoken_names_drop_the_suffix_a_post_drops():
+    assert threads_publisher._spoken(["美光科技", None, " SpaceX ", "X", "鴻海集團"]) == [
+        "美光科技", "美光", "SpaceX", "鴻海集團", "鴻海"]
+
+
+def test_lead_ticker_is_the_stock_the_post_names_first(monkeypatch):
+    monkeypatch.setattr(threads_publisher, "_ticker_labels", lambda ts: {t: _LABELS[t] for t in ts if t in _LABELS})
+    ep = _ep("L1", tickers=["AAPL", "CRWV", "META", "MU"])      # alphabetical, as stored
+    ep.social_thread = {"post": "銀行不願意收 GPU 當抵押品\nCoreweave 營收翻倍沒錯 但 Meta 的帳更難看"}
+    assert threads_publisher.lead_ticker(ep) == "CRWV"           # name, any case, before META
+    ep.social_thread = {"post": "MUSE 是 Meta 的新產品，美光沒被提到之前"}
+    assert threads_publisher.lead_ticker(ep) == "META"           # MU is not the MU in MUSE; Meta is META
+    ep.social_thread = {"post": "美光這季財報有個地方很反直覺，Meta 沒那麼急"}
+    assert threads_publisher.lead_ticker(ep) == "MU"
+    ep = _ep("L2", tickers=["2330", "AI"])
+    ep.social_thread = {"post": "AI 需求還在，台積電先觀察"}
+    assert threads_publisher.lead_ticker(ep) == "2330"           # "AI" the word is not C3.ai
+    ep.social_thread = {"post": "公債殖利率大跌 科技股卻跟著一起崩"}
+    assert threads_publisher.lead_ticker(ep) is None             # macro post, no stock named
+    ep.social_thread = {"post": "市場這兩天在怕的事情 其實已經換題目了\n\n前陣子大家還在算本益比\n現在盯的是借錢蓋資料中心的帳 台積電只是被拖下水"}
+    assert threads_publisher.lead_ticker(ep) is None             # named, but not in the hook
+
+
+@pytest.mark.asyncio
+async def test_publish_recent_posts_stocks_with_a_written_post_as_one_chart(temp_db, monkeypatch):
+    from src.services import social_ledger
+    monkeypatch.setattr(settings, "public_api_url", "https://api.tinboker.com")
+    monkeypatch.setattr(threads_publisher, "_ticker_labels", lambda ts: {t: _LABELS[t] for t in ts if t in _LABELS})
+    fake = _FakeThreads()
+    monkeypatch.setattr(threads_publisher, "ThreadsService", lambda *a, **k: fake)
+    chart = _ep_cards("C1", _cards(), tickers=["AAPL", "META", "MU"])
+    chart.social_thread = {"post": "Meta 那張財報最可怕的數字 不在營收", "comments": [{"text": "x"}]}
+    macro = _ep_cards("C2", _cards(), tickers=["AAPL", "AMZN", "MSFT"])
+    macro.social_thread = {"post": "公債殖利率大跌 科技股卻一起崩", "comments": []}   # no lead stock → the deck
+    legacy = _ep_cards("C3", _cards())                            # no written post → the deck
+    monkeypatch.setattr(threads_publisher.podcast_service, "get_recent_episodes",
+                        await _fake_recent([chart, macro, legacy]))
+
+    dry = await threads_publisher.publish_recent(limit=5, dry_run=True)
+    assert [p.get("kind") for p in dry["posted"]] == ["chart", None, None] and fake.calls == []
+
+    await threads_publisher.publish_recent(limit=5, dry_run=False)
+    singles = [c for c in fake.calls if c[0] == "single"]
+    assert singles[0][1].startswith("https://api.tinboker.com/api/og/stock/META.png?")
+    assert len(singles) == 1
+    assert [c[0] for c in fake.calls].count("carousel") == 2      # macro and legacy keep the deck
+    rows = {r["episode_id"]: r for r in social_ledger.list_posted("threads")}
+    assert (rows["C1"]["format"], rows["C1"]["subject"]) == ("episode_chart", "META")
+    assert rows["C1"]["post_snapshot"] == {"text": "Meta 那張財報最可怕的數字 不在營收"}
+    assert rows["C2"]["format"] == rows["C3"]["format"] == "episode_thread"
+    assert len(rows["C1"]["child_ids"]) == 1                      # the link reply only, no chain
