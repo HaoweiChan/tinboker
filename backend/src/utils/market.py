@@ -4,11 +4,16 @@ from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
 
+# Fixed list: new Taiwan ETFs receive a letter suffix.
+TW_SIX_DIGIT_ETFS = frozenset({"006201", "006203", "006204", "006205", "006206", "006207", "006208"})
+
+
 def infer_market(ticker: str) -> str:
     """Best-effort market label from a bare ticker code.
 
-    6-digit numeric codes are Korean (005930 Samsung, 000660 SK Hynix); 3-5 digit
-    numeric codes are Taiwan (2330, 0050/00878B/00632R ETFs); anything else is US.
+    6-digit numeric codes are Korean (005930 Samsung, 000660 SK Hynix), except
+    seven legacy Taiwan ETFs in TW_SIX_DIGIT_ETFS. 3-5 digit numeric codes are
+    Taiwan (2330, 0050/00878B/00632R ETFs); anything else is US.
     HK 4-digit codes (0700) collide with TW ETFs by shape, so they fall to TW —
     positively distinguishing them needs a real market field, not a heuristic.
 
@@ -29,6 +34,8 @@ def infer_market(ticker: str) -> str:
     core = code[:-1] if (len(code) > 1 and code[-1].isalpha() and code[:-1].isdigit()) else code
     if not core.isdigit():
         return "US"
+    if core in TW_SIX_DIGIT_ETFS:
+        return "TW"
     return "KR" if len(core) == 6 else "TW"
 
 
