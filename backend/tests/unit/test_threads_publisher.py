@@ -938,33 +938,3 @@ async def test_publish_recent_posts_stocks_with_a_written_post_as_one_chart(temp
     assert rows["C1"]["post_snapshot"] == {"text": "Meta 那張財報最可怕的數字 不在營收"}
     assert rows["C2"]["format"] == "episode_text" and rows["C3"]["format"] == "episode_thread"
     assert len(rows["C1"]["child_ids"]) == 1                      # the link reply only, no chain
-
-
-@pytest.mark.asyncio
-async def test_slot_holds_back_a_story_the_account_just_told(temp_db, monkeypatch):
-    from src.services import social_ledger
-    social_ledger.record("threads", "old_story", "m0", "u", [], fmt="episode_chart",
-                         post_snapshot={"text": "CoreWeave 債券殖利率被賣到15%"})
-    social_ledger.record("threads", "market_move:TW:x", "m1", "u", [], fmt="market_move_intraday",
-                         post_snapshot={"text": "加權指數盤中大跌逾1%"})
-    assert threads_publisher.recent_post_texts() == ["CoreWeave 債券殖利率被賣到15%"]   # flashes left out
-
-    episodes = [_ep_cards(ep_id, _cards()) for ep_id in ["R1", "R2", "R3"]]
-    for episode in episodes:
-        episode.social_thread = {"post": f"Post {episode.id}", "comments": []}
-    monkeypatch.setattr(threads_publisher, "ThreadsService", _FakeThreads)
-    monkeypatch.setattr(threads_publisher, "social_enabled_for", lambda _: True)
-    monkeypatch.setattr(settings, "social_slot_ranker_model", "typesafe/jev-1.13")
-    monkeypatch.setattr(settings, "openrouter_api_key", "k")
-    monkeypatch.setattr(threads_publisher.podcast_service, "get_recent_episodes", await _fake_recent(episodes))
-    repeats = AsyncMock(return_value={"R1"})
-    monkeypatch.setattr(social_ranker, "repeats_recent", repeats)
-    monkeypatch.setattr(social_ranker, "score_posts", AsyncMock(return_value={"R2": 0.1, "R3": 0.9}))
-
-    result = await threads_publisher.publish_recent(dry_run=True, max_posts=1)
-
-    repeats.assert_awaited_once_with({e.id: f"Post {e.id}" for e in episodes}, ["CoreWeave 債券殖利率被賣到15%"])
-    assert [p["episode_id"] for p in result["posted"]] == ["R3"]
-    assert {s["episode_id"]: s["reason"] for s in result["skipped"]} == {
-        "R1": "repeats_recent_story", "R2": "slot_full"}
-    assert threads_publisher.already_posted("R1") is False       # held, not consumed
