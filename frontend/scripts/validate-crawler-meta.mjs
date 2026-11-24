@@ -14,6 +14,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import { comparableRows, crossShowLead, othersLean } from '../shared/crossShow.js';
+import { rangeSentence } from '../shared/stockQuote.js';
 
 // Only an opposite stance is a disagreement; a neutral on either side is not.
 {
@@ -84,6 +85,12 @@ assert.equal(mdToHtml('<b>x</b>'), '<p>&lt;b&gt;x&lt;/b&gt;</p>', 'summary text 
 
 const now = new Date();
 const daysAgo = (n) => new Date(now.getTime() - n * 86400e3).toISOString();
+// GET /api/stocks/{t}/quote (backend routers/stock.py quote_from_bars).
+const QUOTE = {
+  ticker: '2330', name: '台積電', market: 'TW', date: '2026-11-21', close: 1450, prev_close: 1465,
+  change: -15, change_pct: -1.02, volume: 31234567, high_52w: 1520, low_52w: 980, range_from: '2025-11-21',
+  valuation: { date: '2026-11-21', pe: 20.66, pb: 7.52, dividend_yield: 1.08, source: 'twse' },
+};
 const INSIGHTS = [
   { episode_id: 'e1', podcaster: 'Gooaye 股癌', podcast_launch_time: daysAgo(1), ticker: '2330', sentiment_label: 'BULLISH', time_horizon: '長期', bluf_thesis: '台積電是 AI 供應鏈核心持股，長期 EPS 趨勢向上。' },
   { episode_id: 'e2', podcaster: '財經一路發', podcast_launch_time: daysAgo(10), ticker: '2330', sentiment_label: 'NEUTRAL', time_horizon: '中期', bluf_thesis: '估值已高，等待回檔。' },
@@ -185,7 +192,11 @@ globalThis.fetch = async (url) => {
   if (u.includes('/api/ticker-insights/trending')) return json([{ ticker: '2330', count: 68, sentiment_label: 'BULLISH' }]);
   if (u.includes('/api/sectors/by-ticker/')) return json({ items: [{ exposure_id: 'sector_mlcc', display_name: '被動元件 MLCC', reason: '核心供應商。' }] });
   if (u.includes('/api/sectors')) return json({ sectors: [{ exposure_id: 'sector_mlcc', display_name: '被動元件 MLCC', description: '題材描述。' }] });
-  if (/\/api\/stocks\/[^/]+\/basic/.test(u)) return json({ ticker: '2330', name: '台積電' });
+  if (/\/api\/stocks\/[^/]+\/quote/.test(u)) {
+    // 981A is the bare form of 00981A: the quote answers with the listing it resolved to.
+    const t = decodeURIComponent(u.match(/stocks\/([^/]+)\/quote/)[1]);
+    return json({ ...QUOTE, ticker: t === '981A' ? '00981A' : t });
+  }
   if (/\/api\/podcast\/[^/]+\/episodes/.test(u)) return json([EPISODE]);
   if (/\/api\/podcast\/[^/]+$/.test(u)) return json({ image_url: 'https://x/show.jpg' });
   if (u.endsWith('/api/podcast')) return json([{ name: 'Gooaye 股癌', episode_count: 18 }]);
@@ -200,7 +211,7 @@ try {
     ['/', null],
     ['/episode/abc123', 'EP500 測試'],
     ['/article/my-slug', '測試文章'],
-    ['/stock/2330', '台積電（2330） · 股價與相關 Podcast'],
+    ['/stock/2330', '台積電（2330）股價、本益比、殖利率 · Podcast 觀點'],
     ['/topics/ai', '#人工智慧'],
     ['/topics/AI', '#人工智慧'],                       // normalizer path
     ['/topics/quantum-computing', '#quantum computing'], // registry miss → fallback
@@ -278,7 +289,27 @@ try {
 
   const stock = await metaFor('/stock/2330', ORIGIN, API);
   const stockPage = renderPage(stock);
-  assert.ok(stock.description.startsWith('台積電（2330） 近 30 天 3 集 Podcast 提及：2 看多 · 1 中立 · 0 看空。'), `stock description is live data: ${stock.description}`);
+  // The price facts lead the description (what a "2330 股價" searcher clicks on), then
+  // the page's own Podcast numbers.
+  assert.ok(stock.description.startsWith('台積電（2330）11/21 收盤 1,450.00 元，跌 15.00（-1.02%），成交量 31,235 張。本益比 20.66、股價淨值比 7.52、殖利率 1.08%（證交所 11/21）。台積電（2330） 近 30 天 3 集 Podcast 提及：2 看多 · 1 中立 · 0 看空。'), `stock description is live data: ${stock.description}`);
+  for (const needle of ['<h2>股價</h2>', '11/21 收盤 1,450.00 元', '近一年最高 1,520.00、最低 980.00。', '本益比 20.66、股價淨值比 7.52、殖利率 1.08%（證交所 11/21）']) {
+    assert.ok(stockPage.includes(needle), `stock body missing price fact ${needle}`);
+  }
+  assert.equal(stock.url, `${ORIGIN}/stock/2330`);
+  // Less than a year of stored bars (00981A starts 2026-09-18): say from when, not 近一年.
+  assert.equal(rangeSentence({ ...QUOTE, range_from: '2026-09-18' }), '2026/9/18 以來最高 1,520.00、最低 980.00。');
+  // A bare code canonicalizes to the listing the API resolved it to.
+  assert.equal((await metaFor('/stock/981A', ORIGIN, API)).url, `${ORIGIN}/stock/00981A`);
+  {
+    // No bars (a private company, a foreign code we do not price): the old template,
+    // and no ratios promised in the title.
+    const inner = globalThis.fetch;
+    globalThis.fetch = async (url) => (String(url).includes('/quote') ? new Response('', { status: 404 }) : inner(url));
+    const bare = await metaFor('/stock/OPENAI', ORIGIN, API);
+    assert.equal(bare.title, 'OPENAI股價走勢 · Podcast 觀點');
+    assert.ok(!renderPage(bare).includes('<h2>股價</h2>'), 'no price section without a quote');
+    globalThis.fetch = inner;
+  }
   assert.ok(stock.description.length <= 160, 'stock description fits a snippet');
 
   // Paywall: 觀點 from the last week are members-only on the page, so serving them
@@ -329,8 +360,9 @@ try {
     return fetchWithEmptyInsights(url);
   })(globalThis.fetch);
   const quiet = await metaFor('/stock/9999', ORIGIN, API);
-  assert.ok(quiet.description.startsWith('查看 台積電（9999） 的即時股價走勢'), `quiet ticker keeps the template: ${quiet.description}`);
-  assert.ok(!renderPage(quiet).includes('Podcast 觀點'), 'quiet ticker renders no empty insight section');
+  assert.ok(quiet.description.includes('查看 台積電（9999） 的股價走勢'), `quiet ticker keeps the template: ${quiet.description}`);
+  // The title now says Podcast 觀點; the check is for the section heading.
+  assert.ok(!renderPage(quiet).includes('<h2>Podcast 觀點</h2>'), 'quiet ticker renders no empty insight section');
   assert.equal(quiet.noindex, true, 'a ticker with nothing to read is not offered to Google');
 
   const sector = await metaFor('/sector/sector_mlcc', ORIGIN, API);

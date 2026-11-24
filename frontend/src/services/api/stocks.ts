@@ -7,6 +7,8 @@ import {
   type SectorsByTickerResponse,
   InstitutionalResponseSchema,
   type InstitutionalResponse,
+  StockQuoteSchema,
+  type StockQuote,
 } from '../../validation/schemas';
 
 function isNumberArray(value: unknown): value is number[] {
@@ -96,6 +98,14 @@ export async function getStockInstitutional(ticker: string, days = 60): Promise<
     headers: { 'X-Silent-Error': 'true' },
   });
   return parseResponse(InstitutionalResponseSchema, response.data);
+}
+
+/** Price facts for the stock page header and its <title>/description. 404 = no bars. */
+export async function getStockQuote(ticker: string): Promise<StockQuote> {
+  const response = await apiClient.get(`/api/stocks/${encodeURIComponent(ticker)}/quote`, {
+    headers: { 'X-Silent-Error': 'true' },
+  });
+  return parseResponse(StockQuoteSchema, response.data);
 }
 
 export async function getSectorsByTicker(ticker: string): Promise<SectorsByTickerResponse> {

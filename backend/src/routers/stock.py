@@ -892,6 +892,105 @@ async def get_stock_basic_info(ticker: str):
     return stock_info
 
 
+# ── Quote: what someone searching "<code> 股價" came for, from the warm tables only ──
+# Search Console (90 days to 2026-11-21): 91% of impressions were "<code> 股價" queries,
+# ranked ~10-13 with almost no clicks, and the crawler body of /stock/2801 carried no
+# price, P/E or yield at all. This is the one read the page header, its <title>/description
+# and the crawler body share. No upstream call: bars come from stock_daily_ohlc (TW
+# official feeds every 6h, US warmers) and ratios from stock_valuations.
+
+_QUOTE_LOOKBACK_DAYS = 372  # 52 weeks + a holiday's slack before the latest bar
+
+
+def quote_from_bars(bars: List[dict], valuation: Optional[dict]) -> Optional[dict]:
+    """The page's price facts from ascending daily bars. Pure.
+
+    The 52-week range starts after the latest price break (a split or reverse split): a
+    range spanning one compares two different share counts. The day change is withheld
+    across a break for the same reason.
+    """
+    if not bars:
+        return None
+    start = 0
+    for i in range(1, len(bars)):
+        if _is_price_break(bars[i - 1]["close"], bars[i]["close"]):
+            start = i
+    window = bars[start:]
+    last = bars[-1]
+    prev = bars[-2]["close"] if len(window) >= 2 else None
+    change = change_pct = None
+    if prev:
+        change = round(last["close"] - prev, 4)
+        change_pct = round(change / prev * 100, 2)
+    return {
+        "date": last["date"],
+        "close": last["close"],
+        "prev_close": prev,
+        "change": change,
+        "change_pct": change_pct,
+        "volume": last.get("volume") or None,
+        "high_52w": max((b.get("high") or b["close"]) for b in window),
+        "low_52w": min((b.get("low") or b["close"]) for b in window),
+        "range_from": window[0]["date"],
+        "valuation": valuation,
+    }
+
+
+def _read_quote(sym: str) -> Optional[dict]:
+    """Sync (runs in a thread). 981A resolves to 00981A, as the detail route does."""
+    from src.services import daily_bars
+    from src.database.models import StockValuation, StockProfile
+
+    to = datetime.utcnow().strftime("%Y-%m-%d")
+    frm = (datetime.utcnow() - timedelta(days=_QUOTE_LOOKBACK_DAYS)).strftime("%Y-%m-%d")
+    bars = daily_bars.read_bars(sym, frm, to)
+    if not bars:
+        canonical = _canonical_tw_ticker(sym)
+        if canonical == sym:
+            return None
+        sym, bars = canonical, daily_bars.read_bars(canonical, frm, to)
+    if bars:
+        # 52 weeks back from the latest bar, not from today: a suspended stock keeps its range.
+        cutoff = (datetime.strptime(bars[-1]["date"], "%Y-%m-%d") - timedelta(days=365)).strftime("%Y-%m-%d")
+        bars = [b for b in bars if b["date"] >= cutoff]
+    valuation = None
+    name = daily_bars.display_name(sym)
+    for db in get_session():
+        v = db.query(StockValuation).filter(StockValuation.ticker == sym).first()
+        if v:
+            valuation = {"date": v.date, "pe": v.pe, "pb": v.pb, "dividend_yield": v.dividend_yield, "source": v.source}
+        if not name:
+            p = db.query(StockProfile.name).filter(StockProfile.ticker == sym).first()
+            name = p[0] if p else None
+        break
+    quote = quote_from_bars(bars, valuation)
+    if not quote:
+        return None
+    return {"ticker": sym, "name": name, "market": infer_market(sym), **quote}
+
+
+@router.get("/{ticker}/quote")
+async def get_stock_quote(ticker: str):
+    """Last close, day change, 52-week range and exchange valuation ratios. 404 when no bars."""
+    sym = ticker.strip().upper()
+    cache_key = f"stock:quote:v1:{sym}"
+    cached = await cache_get(cache_key)
+    if cached:
+        try:
+            return json.loads(cached)
+        except Exception:
+            pass
+    quote = await asyncio.to_thread(_read_quote, sym)
+    if not quote:
+        raise HTTPException(status_code=404, detail=f"No price history for {ticker}")
+    try:
+        # The warm tables move every 6 h; an hour keeps a fresh close within one cycle.
+        await cache_set(cache_key, json.dumps(quote), CACHE_TTL["stock_basic"])
+    except Exception:
+        pass
+    return quote
+
+
 @router.get("/{ticker}/institutional")
 async def get_stock_institutional(
     ticker: str,
