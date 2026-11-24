@@ -377,7 +377,7 @@ def compose_chart_post(episode: Any) -> dict:
     In the feed a carousel is a row of thumbnails whose only legible line is each
     slide's heading, and the headings are section labels (「停滯性通膨疑慮」), not
     claims — the deck was built for the episode page, where it stays. No lead stock →
-    the text post (with its macro card when the episode has one)."""
+    no ``subject`` on the draft, and the slot keeps the carousel."""
     draft = compose_text_post(episode)
     ticker = lead_ticker(episode)
     if ticker:
@@ -734,21 +734,22 @@ async def publish_recent(
                 continue
             logger.info("no ticker story for %s (%s) — the written post instead", episode_id, frame["ticker"])
 
-        # Stocks and a written post → the post with one chart (compose_chart_post).
+        # A written post that leads with a stock → that post with the stock's chart
+        # (compose_chart_post). Without a lead stock it stays the carousel below: on
+        # 2026-11-24 the text-only shape had 2 posts on record (median 356) against the
+        # carousel's 656, too little to move 36 of November's 61 posts onto it.
         if poll is None and _written_post(episode):
             draft = await asyncio.to_thread(compose_chart_post, episode)
-            kind = "chart" if draft.get("subject") else "text"
-            if effective_dry_run:
-                posted.append({**draft, "kind": kind, "dry_run": True})
+            if draft.get("subject"):
+                if effective_dry_run:
+                    posted.append({**draft, "kind": "chart", "dry_run": True})
+                    continue
+                item, skip = await _post_single(service, episode, episode_id, draft, "episode_chart", "chart")
+                (posted if item else skipped).append(item or skip)
                 continue
-            fmt = ("episode_chart" if draft.get("subject")
-                   else "episode_macro_card" if draft.get("image_url") else "episode_text")
-            item, skip = await _post_single(service, episode, episode_id, draft, fmt, kind)
-            (posted if item else skipped).append(item or skip)
-            continue
 
-        # Polls, and legacy episodes with cards but no written post: the full thread
-        # (carousel + reply chain); with neither, a single text/image post.
+        # Polls, written posts without a lead stock, and legacy episodes with cards: the
+        # full thread (carousel + reply chain); with neither, a single text/image post.
         if has_cards or _has_human_thread(episode):
             thread = compose_thread(episode)
             if _cards_not_rendered(episode, thread):
