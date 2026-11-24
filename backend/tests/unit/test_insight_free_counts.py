@@ -40,7 +40,7 @@ def test_counts_supported_rows_per_ticker_inside_the_free_window():
     assert (f1, op1, f2, op2) == ("podcast_launch_time", ">=", "podcast_launch_time", "<=")
     now = datetime.now(timezone.utc)
     assert start == (now - timedelta(days=90)).strftime("%Y-%m-%dT00:00:00Z")
-    # The newest paywall_days are members-only, so they must not make a page "listable".
-    assert end[:10] == (now - timedelta(days=svc.INSIGHT_PAYWALL_DAYS)).strftime("%Y-%m-%d")
+    # Every row up to now is readable, so the window ends at the current time.
+    assert end[:10] == now.strftime("%Y-%m-%d")
     # Stored timestamps look like 2026-09-30T07:54:31Z and are compared as strings.
     assert len(end) == len("2026-09-30T07:54:31Z") and end.endswith("Z")
