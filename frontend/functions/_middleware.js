@@ -199,17 +199,24 @@ const labelled = (items) => ul(items.map((i) => `<strong>${esc(i.label)}：</str
 // carrying '(#time:ms)' anchors, '[text](#tag:x)' links, paragraphs. The client strips the
 // same anchors (src/utils/timeFormat.ts), so the text matches what the page renders.
 // The page's H1 is the episode title, so summary headings shift down one level.
-export function mdToHtml(md) {
+// Articles also strip inline formatting/list markers and use h2/h3 headings.
+export function mdToHtml(md, isArticle = false) {
   const out = [];
-  for (const block of String(md || '').split(/\n{2,}/)) {
-    const t = block.trim()
+  for (const block of String(md || '').split(isArticle ? /\r?\n[ \t]*\r?\n/ : /\n{2,}/)) {
+    let t = block.trim()
       .replace(/\(#time:\s*\d+\)/g, '')
       .replace(/\[([^\]]+)\]\(#[^)]*\)/g, '$1')
       .trim();
+    if (isArticle) {
+      t = t.replace(/^[ \t]*(?:[-+*]|\d+[.)])[ \t]+/gm, '')
+        .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+        .replace(/[*`]/g, '')
+        .trim();
+    }
     if (!t) continue;
     const h = t.match(/^(#{1,3})\s+([\s\S]*)$/);
     if (h) {
-      const lvl = Math.min(h[1].length + 1, 4);
+      const lvl = isArticle ? Math.max(h[1].length, 2) : Math.min(h[1].length + 1, 4);
       out.push(`<h${lvl}>${esc(h[2].trim())}</h${lvl}>`);
     } else {
       out.push(`<p>${esc(t).replace(/\n/g, '<br>')}</p>`);
@@ -504,7 +511,8 @@ export async function metaFor(pathname, origin, api) {
       type: 'article',
       url,
       body: (a_.subtitle ? `<p>${esc(a_.subtitle)}</p>` : '')
-        + ((a_.key_points || []).length ? `<h2>重點</h2>${ul(a_.key_points.map(esc))}` : ''),
+        + ((a_.key_points || []).length ? `<h2>重點</h2>${ul(a_.key_points.map(esc))}` : '')
+        + mdToHtml(a_.body_content, true),
       ld: [{
         '@context': 'https://schema.org', '@type': 'Article', headline: a_.title, url, image,
         ...(a_.published_at ? { datePublished: a_.published_at } : {}),
